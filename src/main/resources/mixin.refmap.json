@@ -1,0 +1,66 @@
+{
+  "mappings": {
+    "xyz/jxmm/litematica_printer_forge/mixin/quasiEssentialClient/ItemPlacementContextMixin": {
+      "getNearestLookingDirections": "Lnet/minecraft/world/item/context/BlockPlaceContext;m_6232_()[Lnet/minecraft/core/Direction;",
+      "Lnet/minecraft/core/Direction;orderedByNearest(Lnet/minecraft/world/entity/Entity;)[Lnet/minecraft/core/Direction;": "Lnet/minecraft/core/Direction;m_122382_(Lnet/minecraft/world/entity/Entity;)[Lnet/minecraft/core/Direction;",
+      "getNearestLookingVerticalDirection": "Lnet/minecraft/world/item/context/BlockPlaceContext;m_151260_()Lnet/minecraft/core/Direction;",
+      "getNearestLookingDirection": "Lnet/minecraft/world/item/context/BlockPlaceContext;m_7820_()Lnet/minecraft/core/Direction;"
+    },
+    "xyz/jxmm/litematica_printer_forge/mixin/quasiEssentialClient/ClientPlayerEntityMixin": {
+      "Lnet/minecraft/client/multiplayer/ClientPacketListener;send(Lnet/minecraft/network/protocol/Packet;)V": "Lnet/minecraft/client/multiplayer/ClientPacketListener;m_104955_(Lnet/minecraft/network/protocol/Packet;)V",
+      "sendPosition": "Lnet/minecraft/client/player/LocalPlayer;m_108640_()V"
+    },
+    "xyz/jxmm/litematica_printer_forge/mixin/Litematica/MinecraftClientMixin": {
+      "tick": "Lnet/minecraft/client/Minecraft;m_91398_()V",
+      "startUseItem": "Lnet/minecraft/client/Minecraft;m_91277_()V",
+      "setLevel": "Lnet/minecraft/client/Minecraft;m_91156_(Lnet/minecraft/client/multiplayer/ClientLevel;)V"
+    },
+    "xyz/jxmm/litematica_printer_forge/mixin/quasiEssentialClient/ItemUsageContextMixin": {
+      "getRotation": "Lnet/minecraft/world/item/context/UseOnContext;m_7074_()F",
+      "getHorizontalDirection": "Lnet/minecraft/world/item/context/UseOnContext;m_8125_()Lnet/minecraft/core/Direction;"
+    },
+    "xyz/jxmm/litematica_printer_forge/mixin/MinecraftClient/ClientPlayerInteractionManagerMixin": {
+      "handleInventoryMouseClick": "Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;m_171799_(IIILnet/minecraft/world/inventory/ClickType;Lnet/minecraft/world/entity/player/Player;)V",
+      "Lnet/minecraft/client/multiplayer/ClientPacketListener;send(Lnet/minecraft/network/protocol/Packet;)V": "Lnet/minecraft/client/multiplayer/ClientPacketListener;m_104955_(Lnet/minecraft/network/protocol/Packet;)V",
+      "handleCreativeModeItemAdd": "Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;m_105241_(Lnet/minecraft/world/item/ItemStack;I)V"
+    },
+    "xyz/jxmm/litematica_printer_forge/mixin/MinecraftClient/ClientPlayNetworkHandlerMixin": {
+      "handleContainerSetSlot": "Lnet/minecraft/client/multiplayer/ClientPacketListener;m_5735_(Lnet/minecraft/network/protocol/game/ClientboundContainerSetSlotPacket;)V",
+      "handleSetCarriedItem": "Lnet/minecraft/client/multiplayer/ClientPacketListener;m_5612_(Lnet/minecraft/network/protocol/game/ClientboundSetCarriedItemPacket;)V",
+      "handleDisconnect": "Lnet/minecraft/client/multiplayer/ClientPacketListener;m_6008_(Lnet/minecraft/network/protocol/game/ClientboundDisconnectPacket;)V"
+    }
+  },
+  "data": {
+    "searge": {
+      "xyz/jxmm/litematica_printer_forge/mixin/quasiEssentialClient/ItemPlacementContextMixin": {
+        "getNearestLookingDirections": "Lnet/minecraft/world/item/context/BlockPlaceContext;m_6232_()[Lnet/minecraft/core/Direction;",
+        "Lnet/minecraft/core/Direction;orderedByNearest(Lnet/minecraft/world/entity/Entity;)[Lnet/minecraft/core/Direction;": "Lnet/minecraft/core/Direction;m_122382_(Lnet/minecraft/world/entity/Entity;)[Lnet/minecraft/core/Direction;",
+        "getNearestLookingVerticalDirection": "Lnet/minecraft/world/item/context/BlockPlaceContext;m_151260_()Lnet/minecraft/core/Direction;",
+        "getNearestLookingDirection": "Lnet/minecraft/world/item/context/BlockPlaceContext;m_7820_()Lnet/minecraft/core/Direction;"
+      },
+      "xyz/jxmm/litematica_printer_forge/mixin/quasiEssentialClient/ClientPlayerEntityMixin": {
+        "Lnet/minecraft/client/multiplayer/ClientPacketListener;send(Lnet/minecraft/network/protocol/Packet;)V": "Lnet/minecraft/client/multiplayer/ClientPacketListener;m_104955_(Lnet/minecraft/network/protocol/Packet;)V",
+        "sendPosition": "Lnet/minecraft/client/player/LocalPlayer;m_108640_()V"
+      },
+      "xyz/jxmm/litematica_printer_forge/mixin/Litematica/MinecraftClientMixin": {
+        "tick": "Lnet/minecraft/client/Minecraft;m_91398_()V",
+        "startUseItem": "Lnet/minecraft/client/Minecraft;m_91277_()V",
+        "setLevel": "Lnet/minecraft/client/Minecraft;m_91156_(Lnet/minecraft/client/multiplayer/ClientLevel;)V"
+      },
+      "xyz/jxmm/litematica_printer_forge/mixin/quasiEssentialClient/ItemUsageContextMixin": {
+        "getRotation": "Lnet/minecraft/world/item/context/UseOnContext;m_7074_()F",
+        "getHorizontalDirection": "Lnet/minecraft/world/item/context/UseOnContext;m_8125_()Lnet/minecraft/core/Direction;"
+      },
+      "xyz/jxmm/litematica_printer_forge/mixin/MinecraftClient/ClientPlayerInteractionManagerMixin": {
+        "handleInventoryMouseClick": "Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;m_171799_(IIILnet/minecraft/world/inventory/ClickType;Lnet/minecraft/world/entity/player/Player;)V",
+        "Lnet/minecraft/client/multiplayer/ClientPacketListener;send(Lnet/minecraft/network/protocol/Packet;)V": "Lnet/minecraft/client/multiplayer/ClientPacketListener;m_104955_(Lnet/minecraft/network/protocol/Packet;)V",
+        "handleCreativeModeItemAdd": "Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;m_105241_(Lnet/minecraft/world/item/ItemStack;I)V"
+      },
+      "xyz/jxmm/litematica_printer_forge/mixin/MinecraftClient/ClientPlayNetworkHandlerMixin": {
+        "handleContainerSetSlot": "Lnet/minecraft/client/multiplayer/ClientPacketListener;m_5735_(Lnet/minecraft/network/protocol/game/ClientboundContainerSetSlotPacket;)V",
+        "handleSetCarriedItem": "Lnet/minecraft/client/multiplayer/ClientPacketListener;m_5612_(Lnet/minecraft/network/protocol/game/ClientboundSetCarriedItemPacket;)V",
+        "handleDisconnect": "Lnet/minecraft/client/multiplayer/ClientPacketListener;m_6008_(Lnet/minecraft/network/protocol/game/ClientboundDisconnectPacket;)V"
+      }
+    }
+  }
+}

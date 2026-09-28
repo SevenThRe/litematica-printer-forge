@@ -1,0 +1,24 @@
+# Gradle
+.gradle/
+build/
+bin/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.eclipse/
+.settings/
+.classpath
+.project
+
+# 工作目录临时产物
+.tmp_classes/
+.tmp_orig/
+.tmp_manifest/
+.tmp_args.txt
+.tmp_args.txt.bak
+.tmp_args2.txt
+.tmp_classpath.jar
+build_err.txt
+javac_err.txt
