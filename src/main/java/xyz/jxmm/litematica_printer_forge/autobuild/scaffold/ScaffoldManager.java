@@ -1,5 +1,6 @@
 package xyz.jxmm.litematica_printer_forge.autobuild.scaffold;
 
+import xyz.jxmm.litematica_printer_forge.LitematicaMixinMod;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -184,7 +185,7 @@ public final class ScaffoldManager {
             if (mc.f_91073_.m_8055_(mb.pos).m_60795_()) {
                 it.remove();
                 changed = true;
-                System.out.println(TAG + "Scaffold at [" + mb.pos.m_123341_() + "," + mb.pos.m_123342_()
+                LitematicaMixinMod.LOGGER.info(TAG + "Scaffold at [" + mb.pos.m_123341_() + "," + mb.pos.m_123342_()
                         + "," + mb.pos.m_123343_() + "] is gone, marker released");
             }
         }
@@ -211,7 +212,7 @@ public final class ScaffoldManager {
             return false;
         }
         if (chooseScaffoldItem(mc) == null) {
-            System.out.println(TAG + "No scaffold material (scaffolding/dirt/cobblestone) in inventory");
+            LitematicaMixinMod.LOGGER.info(TAG + "No scaffold material (scaffolding/dirt/cobblestone) in inventory");
             return false;
         }
         jobActive = true;
@@ -223,7 +224,7 @@ public final class ScaffoldManager {
         phaseTicks = 0;
         placeRetries = 0;
         pendingPlacePos = null;
-        System.out.println(TAG + "Scaffold pillar requested to reach [" + target.m_123341_() + ","
+        LitematicaMixinMod.LOGGER.info(TAG + "Scaffold pillar requested to reach [" + target.m_123341_() + ","
                 + target.m_123342_() + "," + target.m_123343_() + "], need " + needed + " block(s)");
         return true;
     }
@@ -257,7 +258,7 @@ public final class ScaffoldManager {
         // Done when the target block is directly above our feet (within range).
         int feetY = p.m_20183_().m_123342_();
         if (pillarTarget != null && feetY >= pillarTarget.m_123342_() - 1) {
-            System.out.println(TAG + "Scaffold pillar done, feet at Y=" + feetY);
+            LitematicaMixinMod.LOGGER.info(TAG + "Scaffold pillar done, feet at Y=" + feetY);
             cancelJob();
             return;
         }
@@ -266,7 +267,7 @@ public final class ScaffoldManager {
         switch (phase) {
             case 0: { // ensure item in hand, then start a jump
                 if (chooseScaffoldItem(mc) == null) {
-                    System.out.println(TAG + "Scaffold material exhausted mid-pillar");
+                    LitematicaMixinMod.LOGGER.info(TAG + "Scaffold material exhausted mid-pillar");
                     jobFailed = true;
                     cancelJob();
                     return;
@@ -286,7 +287,7 @@ public final class ScaffoldManager {
                     mc.f_91066_.f_92089_.m_7249_(false);
                     placeRetries++;
                     if (placeRetries > MAX_PLACE_RETRIES) {
-                        System.out.println(TAG + "Scaffold pillar cannot jump, giving up at Y=" + feetY);
+                        LitematicaMixinMod.LOGGER.info(TAG + "Scaffold pillar cannot jump, giving up at Y=" + feetY);
                         jobFailed = true;
                         cancelJob();
                         return;
@@ -298,7 +299,7 @@ public final class ScaffoldManager {
             case 2: { // airborne: place a block into the cell we just vacated
                 BlockPos feet = p.m_20183_();
                 if (!isLegalScaffoldCell(mc, feet)) {
-                    System.out.println(TAG + "Scaffold cell [" + feet.m_123341_() + "," + feet.m_123342_()
+                    LitematicaMixinMod.LOGGER.info(TAG + "Scaffold cell [" + feet.m_123341_() + "," + feet.m_123342_()
                             + "," + feet.m_123343_() + "] overlaps unbuilt schematic, aborting pillar");
                     jobFailed = true;
                     cancelJob();
@@ -311,7 +312,7 @@ public final class ScaffoldManager {
                 } else {
                     placeRetries++;
                     if (placeRetries > MAX_PLACE_RETRIES) {
-                        System.out.println(TAG + "Scaffold placement kept failing, giving up at Y=" + feetY);
+                        LitematicaMixinMod.LOGGER.info(TAG + "Scaffold placement kept failing, giving up at Y=" + feetY);
                         jobFailed = true;
                         cancelJob();
                         return;
@@ -382,7 +383,7 @@ public final class ScaffoldManager {
         teardownActive = true;
         pickupTarget = null;
         pickupTicks = 0;
-        System.out.println(TAG + "Teardown started, " + teardownQueue.size() + " scaffold block(s)");
+        LitematicaMixinMod.LOGGER.info(TAG + "Teardown started, " + teardownQueue.size() + " scaffold block(s)");
     }
 
     /**
@@ -433,10 +434,10 @@ public final class ScaffoldManager {
             // Cell now holds a foreign block. If it matches the schematic, keep
             // it (FR-21); otherwise report it as residue, never silently drop.
             if (AutoBuildPlanner.isSchematicBlockAtOrBelow(mb.pos, Integer.MAX_VALUE)) {
-                System.out.println(TAG + "Scaffold cell now holds the schematic block, keeping it");
+                LitematicaMixinMod.LOGGER.info(TAG + "Scaffold cell now holds the schematic block, keeping it");
             } else {
                 residues.add(mb.pos);
-                System.out.println(TAG + "Residue at [" + mb.pos.m_123341_() + "," + mb.pos.m_123342_()
+                LitematicaMixinMod.LOGGER.info(TAG + "Residue at [" + mb.pos.m_123341_() + "," + mb.pos.m_123342_()
                         + "," + mb.pos.m_123343_() + "]: " + world.m_60734_());
             }
             marked.remove(AutoBuildPlanner.packPos(mb.pos));
@@ -478,7 +479,7 @@ public final class ScaffoldManager {
                 mc.f_91074_.m_5661_(net.minecraft.network.chat.Component.m_237113_(sb.toString()), false);
             }
         }
-        System.out.println(TAG + "Teardown complete, marker file deleted, residues=" + residues.size());
+        LitematicaMixinMod.LOGGER.info(TAG + "Teardown complete, marker file deleted, residues=" + residues.size());
     }
 
     // ===== Internals =====
@@ -513,7 +514,7 @@ public final class ScaffoldManager {
             InventoryUtils.decrementCount(p.m_150110_().f_35937_);
             return true;
         } catch (Throwable t) {
-            System.out.println(TAG + "Scaffold place failed: " + t);
+            LitematicaMixinMod.LOGGER.info(TAG + "Scaffold place failed: " + t);
             return false;
         }
     }
@@ -564,7 +565,7 @@ public final class ScaffoldManager {
                 new MarkedBlock(pos, idOf(item), System.currentTimeMillis(), placement));
         dirty = true;
         saveCountdown = SAVE_DEBOUNCE_TICKS;
-        System.out.println(TAG + "Scaffold placed at [" + pos.m_123341_() + "," + pos.m_123342_()
+        LitematicaMixinMod.LOGGER.info(TAG + "Scaffold placed at [" + pos.m_123341_() + "," + pos.m_123342_()
                 + "," + pos.m_123343_() + "] (" + idOf(item) + "), marked=" + marked.size());
     }
 
@@ -597,7 +598,7 @@ public final class ScaffoldManager {
         dirty = false;
         File f = markerFile(mc);
         if (!f.exists()) {
-            System.out.println(TAG + "No scaffold marker file for " + dim);
+            LitematicaMixinMod.LOGGER.info(TAG + "No scaffold marker file for " + dim);
             return;
         }
         try {
@@ -619,9 +620,9 @@ public final class ScaffoldManager {
                     n++;
                 }
             }
-            System.out.println(TAG + "Loaded " + n + " scaffold marker(s) from " + f.getName());
+            LitematicaMixinMod.LOGGER.info(TAG + "Loaded " + n + " scaffold marker(s) from " + f.getName());
         } catch (Throwable t) {
-            System.out.println(TAG + "Failed to load scaffold markers: " + t);
+            LitematicaMixinMod.LOGGER.info(TAG + "Failed to load scaffold markers: " + t);
         }
     }
 
@@ -657,7 +658,7 @@ public final class ScaffoldManager {
             Files.write(f.toPath(), root.toString().getBytes(StandardCharsets.UTF_8));
             dirty = false;
         } catch (IOException e) {
-            System.out.println(TAG + "Failed to save scaffold markers: " + e);
+            LitematicaMixinMod.LOGGER.info(TAG + "Failed to save scaffold markers: " + e);
         }
     }
 
@@ -665,10 +666,10 @@ public final class ScaffoldManager {
         try {
             File f = markerFile(mc);
             if (f.exists() && f.delete()) {
-                System.out.println(TAG + "Deleted " + f.getName());
+                LitematicaMixinMod.LOGGER.info(TAG + "Deleted " + f.getName());
             }
         } catch (Throwable t) {
-            System.out.println(TAG + "Failed to delete marker file: " + t);
+            LitematicaMixinMod.LOGGER.info(TAG + "Failed to delete marker file: " + t);
         }
     }
 }

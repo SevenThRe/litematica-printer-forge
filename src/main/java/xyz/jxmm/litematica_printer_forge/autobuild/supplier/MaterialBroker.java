@@ -121,7 +121,7 @@ public final class MaterialBroker {
             status = Status.DONE;
             return;
         }
-        System.out.println(TAG + "Restock started, shortages: " + describe(residual));
+        LitematicaMixinMod.LOGGER.info(TAG + "Restock started, shortages: " + describe(residual));
         chain = buildChain(mc);
         chainIdx = 0;
         settleTicksLeft = 0;
@@ -162,7 +162,7 @@ public final class MaterialBroker {
                 if (residual.isEmpty()) {
                     status = Status.DONE;
                     statusLine = "";
-                    System.out.println(TAG + "Restock complete");
+                    LitematicaMixinMod.LOGGER.info(TAG + "Restock complete");
                     return true;
                 }
                 chainIdx++;
@@ -174,14 +174,14 @@ public final class MaterialBroker {
         if (chainIdx >= chain.size()) {
             status = Status.EXHAUSTED;
             statusLine = "";
-            System.out.println(TAG + "Restock exhausted, residual: " + describe(residual));
+            LitematicaMixinMod.LOGGER.info(TAG + "Restock exhausted, residual: " + describe(residual));
             return true;
         }
 
         MaterialSupplier active = chain.get(chainIdx);
         supplierTicks++;
         if (supplierTicks > SUPPLIER_TIMEOUT_TICKS) {
-            System.out.println(TAG + "Supplier " + active.name() + " timed out, skipping");
+            LitematicaMixinMod.LOGGER.info(TAG + "Supplier " + active.name() + " timed out, skipping");
             safeAbort(active, mc);
             chainIdx++;
             startNextSupplier(mc);
@@ -192,7 +192,7 @@ public final class MaterialBroker {
         try {
             working = active.tick(mc);
         } catch (Throwable t) {
-            System.out.println(TAG + "Supplier " + active.name() + " failed: " + t);
+            LitematicaMixinMod.LOGGER.info(TAG + "Supplier " + active.name() + " failed: " + t);
             safeAbort(active, mc);
             working = false;
         }
@@ -223,18 +223,18 @@ public final class MaterialBroker {
             try {
                 avail = s.isAvailable(mc);
             } catch (Throwable t) {
-                System.out.println(TAG + "Supplier " + s.name() + " availability check failed: " + t);
+                LitematicaMixinMod.LOGGER.info(TAG + "Supplier " + s.name() + " availability check failed: " + t);
                 avail = false;
             }
             if (avail) {
                 countBefore = countAll(mc, residual.keySet());
                 supplierTicks = 0;
                 statusLine = "Supplying via " + s.name();
-                System.out.println(TAG + "Trying supplier " + s.name() + " for: " + describe(residual));
+                LitematicaMixinMod.LOGGER.info(TAG + "Trying supplier " + s.name() + " for: " + describe(residual));
                 try {
                     s.start(mc, new LinkedHashMap<>(residual));
                 } catch (Throwable t) {
-                    System.out.println(TAG + "Supplier " + s.name() + " start failed: " + t);
+                    LitematicaMixinMod.LOGGER.info(TAG + "Supplier " + s.name() + " start failed: " + t);
                     safeAbort(s, mc);
                     chainIdx++;
                     continue;
@@ -262,7 +262,7 @@ public final class MaterialBroker {
                 }
             }
         }
-        System.out.println(TAG + "Supplier pass done, obtained: " + describe(obtained)
+        LitematicaMixinMod.LOGGER.info(TAG + "Supplier pass done, obtained: " + describe(obtained)
                 + " residual: " + describe(residual));
     }
 

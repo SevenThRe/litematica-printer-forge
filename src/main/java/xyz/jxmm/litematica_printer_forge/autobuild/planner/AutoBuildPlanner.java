@@ -333,7 +333,7 @@ public final class AutoBuildPlanner {
         placementStats = Collections.unmodifiableMap(statsAccum);
         scanComplete = true;
         dataVersion++;
-        System.out.println("[AUTOBUILD] Planner scan pass complete: missing=" + missingSorted.size()
+        LitematicaMixinMod.LOGGER.info("[AUTOBUILD] Planner scan pass complete: missing=" + missingSorted.size()
                 + " schematicBlocks=" + schematicPositions.size() + " version=" + dataVersion);
     }
 

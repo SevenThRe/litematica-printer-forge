@@ -1,5 +1,6 @@
 package xyz.jxmm.litematica_printer_forge.autobuild.bridge;
 
+import xyz.jxmm.litematica_printer_forge.LitematicaMixinMod;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -51,7 +52,7 @@ public final class BaritoneBridge {
         if (!initAttempted) {
             initAttempted = true;
             installed = init();
-            System.out.println(TAG + (installed
+            LitematicaMixinMod.LOGGER.info(TAG + (installed
                     ? "Baritone detected, navigation bridge ready"
                     : "Baritone not present or incompatible, auto build navigation disabled"));
         }
@@ -107,7 +108,7 @@ public final class BaritoneBridge {
             settingValueField = sampleSetting != null ? findField(sampleSetting.getClass(), "value") : null;
             return settingValueField != null;
         } catch (Throwable t) {
-            System.out.println(TAG + "Baritone reflection init failed: " + t);
+            LitematicaMixinMod.LOGGER.info(TAG + "Baritone reflection init failed: " + t);
             return false;
         }
     }
@@ -158,7 +159,7 @@ public final class BaritoneBridge {
             snapshotTaken = true;
             return true;
         } catch (Throwable t) {
-            System.out.println(TAG + "settings snapshot failed: " + t);
+            LitematicaMixinMod.LOGGER.info(TAG + "settings snapshot failed: " + t);
             return false;
         }
     }
@@ -185,7 +186,7 @@ public final class BaritoneBridge {
             setSetting(allowSprintField, allowSprint);
             return true;
         } catch (Throwable t) {
-            System.out.println(TAG + "apply pathing settings failed: " + t);
+            LitematicaMixinMod.LOGGER.info(TAG + "apply pathing settings failed: " + t);
             return false;
         }
     }
@@ -211,7 +212,7 @@ public final class BaritoneBridge {
             snapshotTaken = false;
             return true;
         } catch (Throwable t) {
-            System.out.println(TAG + "settings restore failed: " + t);
+            LitematicaMixinMod.LOGGER.info(TAG + "settings restore failed: " + t);
             return false;
         }
     }
@@ -234,7 +235,7 @@ public final class BaritoneBridge {
             }
             return true;
         } catch (Throwable t) {
-            System.out.println(TAG + "goTo [" + pos.m_123341_() + "," + pos.m_123342_() + "," + pos.m_123343_() + "] failed: " + t);
+            LitematicaMixinMod.LOGGER.info(TAG + "goTo [" + pos.m_123341_() + "," + pos.m_123342_() + "," + pos.m_123343_() + "] failed: " + t);
             return false;
         }
     }

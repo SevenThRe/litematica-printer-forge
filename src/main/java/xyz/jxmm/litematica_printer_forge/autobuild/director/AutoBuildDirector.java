@@ -99,7 +99,7 @@ public final class AutoBuildDirector {
             pauseReason = PauseReason.NONE;
             LitematicaMixinMod.PRINTER_OFF.setBooleanValue(true);
             BaritoneBridge.cancel();
-            System.out.println(TAG + "Paused by user");
+            LitematicaMixinMod.LOGGER.info(TAG + "Paused by user");
         }
     }
 
@@ -181,7 +181,7 @@ public final class AutoBuildDirector {
         AutoBuildPlanner.invalidate();
         resetRunState();
         setState(State.PLANNING);
-        System.out.println(TAG + "Auto build started");
+        LitematicaMixinMod.LOGGER.info(TAG + "Auto build started");
     }
 
     private static void stop() {
@@ -193,14 +193,14 @@ public final class AutoBuildDirector {
         LitematicaMixinMod.PRINTER_OFF.setBooleanValue(userPrinterOff);
         resetRunState();
         setState(State.IDLE);
-        System.out.println(TAG + "Auto build stopped");
+        LitematicaMixinMod.LOGGER.info(TAG + "Auto build stopped");
     }
 
     private static void resumeFromPause() {
         pauseReason = PauseReason.NONE;
         resetRunState();
         setState(State.PLANNING);
-        System.out.println(TAG + "Resumed");
+        LitematicaMixinMod.LOGGER.info(TAG + "Resumed");
     }
 
     public static PauseReason getPauseReason() {
@@ -219,7 +219,7 @@ public final class AutoBuildDirector {
             Minecraft.m_91087_().f_91074_.m_5661_(Component.m_237113_(chat), false);
         }
         if (first) {
-            System.out.println(TAG + "Paused (" + reason + ")" + (chat != null ? ": " + chat : ""));
+            LitematicaMixinMod.LOGGER.info(TAG + "Paused (" + reason + ")" + (chat != null ? ": " + chat : ""));
         }
     }
 
@@ -245,7 +245,7 @@ public final class AutoBuildDirector {
     private static void setState(State next) {
         if (currentState != next) {
             currentState = next;
-            System.out.println(TAG + "State -> " + next);
+            LitematicaMixinMod.LOGGER.info(TAG + "State -> " + next);
         }
     }
 
@@ -273,7 +273,7 @@ public final class AutoBuildDirector {
                         beginCleanup();
                         return;
                     }
-                    System.out.println(TAG + "All schematic placements complete (skipped recovered)");
+                    LitematicaMixinMod.LOGGER.info(TAG + "All schematic placements complete (skipped recovered)");
                     stop();
                     return;
                 }
@@ -287,7 +287,7 @@ public final class AutoBuildDirector {
                         beginCleanup();
                         return;
                     }
-                    System.out.println(TAG + "All schematic placements complete");
+                    LitematicaMixinMod.LOGGER.info(TAG + "All schematic placements complete");
                     stop();
                     return;
                 }
@@ -300,7 +300,7 @@ public final class AutoBuildDirector {
                         BaritoneBridge.goTo(e.pos);
                         navigateTicks = 0;
                         setState(State.NAVIGATING);
-                        System.out.println(TAG + "Exploring towards unloaded area [" + e.pos.m_123341_() + "," + e.pos.m_123342_() + "," + e.pos.m_123343_() + "]");
+                        LitematicaMixinMod.LOGGER.info(TAG + "Exploring towards unloaded area [" + e.pos.m_123341_() + "," + e.pos.m_123342_() + "," + e.pos.m_123343_() + "]");
                         return;
                     }
                 }
@@ -354,7 +354,7 @@ public final class AutoBuildDirector {
         BaritoneBridge.goTo(targetStand);
         navigateTicks = 0;
         setState(State.NAVIGATING);
-        System.out.println(TAG + "Navigating to [" + targetStand.m_123341_() + "," + targetStand.m_123342_() + "," + targetStand.m_123343_()
+        LitematicaMixinMod.LOGGER.info(TAG + "Navigating to [" + targetStand.m_123341_() + "," + targetStand.m_123342_() + "," + targetStand.m_123343_()
                 + "] layerY=" + currentLayerY + " blocks=" + targetBlocks.size());
     }
 
@@ -366,7 +366,7 @@ public final class AutoBuildDirector {
 
         boolean arrived = targetStand != null && BaritoneBridge.isArrived(targetStand, arriveTolerance);
         if (arrived) {
-            System.out.println(TAG + "Arrived at stand [" + targetStand.m_123341_() + "," + targetStand.m_123342_() + "," + targetStand.m_123343_() + "]");
+            LitematicaMixinMod.LOGGER.info(TAG + "Arrived at stand [" + targetStand.m_123341_() + "," + targetStand.m_123342_() + "," + targetStand.m_123343_() + "]");
             BaritoneBridge.cancel();
             LitematicaMixinMod.PRINTER_OFF.setBooleanValue(false);
             printStuckTicks = 0;
@@ -379,7 +379,7 @@ public final class AutoBuildDirector {
             BaritoneBridge.cancel();
             unreachableRetries++;
             int maxRetries = LitematicaMixinMod.AUTO_BUILD_UNREACHABLE_RETRIES.getIntegerValue();
-            System.out.println(TAG + "Arrival timeout at [" + targetStand.m_123341_() + "," + targetStand.m_123342_() + "," + targetStand.m_123343_()
+            LitematicaMixinMod.LOGGER.info(TAG + "Arrival timeout at [" + targetStand.m_123341_() + "," + targetStand.m_123342_() + "," + targetStand.m_123343_()
                     + "] retry=" + unreachableRetries + "/" + maxRetries);
 
             if (unreachableRetries > maxRetries) {
@@ -455,7 +455,7 @@ public final class AutoBuildDirector {
                     "[AUTOBUILD] 缺料跳过多次无进展，暂停: " + sb);
             return;
         }
-        System.out.println(TAG + "Skipped " + added + " block(s) for missing materials: " + sb
+        LitematicaMixinMod.LOGGER.info(TAG + "Skipped " + added + " block(s) for missing materials: " + sb
                 + " (skipSet=" + skipSet.size() + ", will retry)");
         setState(State.PLANNING);
     }
@@ -469,7 +469,7 @@ public final class AutoBuildDirector {
         }
 
         if (AutoBuildPlanner.isLayerComplete(currentLayerY, skipSet)) {
-            System.out.println(TAG + "Layer Y=" + currentLayerY + " complete");
+            LitematicaMixinMod.LOGGER.info(TAG + "Layer Y=" + currentLayerY + " complete");
             setState(State.PLANNING);
             return;
         }
@@ -537,7 +537,7 @@ public final class AutoBuildDirector {
     private static void tickCleanup(Minecraft mc) {
         LitematicaMixinMod.PRINTER_OFF.setBooleanValue(true);
         if (ScaffoldManager.teardownTick(mc)) {
-            System.out.println(TAG + "Cleanup finished");
+            LitematicaMixinMod.LOGGER.info(TAG + "Cleanup finished");
             stop();
             return;
         }
@@ -545,7 +545,7 @@ public final class AutoBuildDirector {
     }
 
     private static void beginCleanup() {
-        System.out.println(TAG + "Entering cleanup, scaffolds=" + ScaffoldManager.getMarkedCount());
+        LitematicaMixinMod.LOGGER.info(TAG + "Entering cleanup, scaffolds=" + ScaffoldManager.getMarkedCount());
         ScaffoldManager.beginTeardown();
         LitematicaMixinMod.PRINTER_OFF.setBooleanValue(true);
         setState(State.CLEANUP);
@@ -583,7 +583,7 @@ public final class AutoBuildDirector {
             if (guiYield) {
                 guiYield = false;
                 pauseReason = PauseReason.NONE;
-                System.out.println(TAG + "Foreign GUI closed, resuming");
+                LitematicaMixinMod.LOGGER.info(TAG + "Foreign GUI closed, resuming");
                 State back = yieldReturnState == null ? State.PLANNING : yieldReturnState;
                 if (back == State.NAVIGATING && targetStand != null) {
                     BaritoneBridge.goTo(targetStand);
@@ -600,7 +600,7 @@ public final class AutoBuildDirector {
             pauseReason = PauseReason.EXTERNAL_GUI;
             LitematicaMixinMod.PRINTER_OFF.setBooleanValue(true);
             BaritoneBridge.cancel();
-            System.out.println(TAG + "Foreign GUI opened ("
+            LitematicaMixinMod.LOGGER.info(TAG + "Foreign GUI opened ("
                     + mc.f_91080_.getClass().getSimpleName() + "), yielding");
         }
         hudLine = "Yielding to GUI";
@@ -616,7 +616,7 @@ public final class AutoBuildDirector {
                 setState(State.PAUSED);
                 LitematicaMixinMod.PRINTER_OFF.setBooleanValue(true);
                 BaritoneBridge.cancel();
-                System.out.println(TAG + "Low health (" + mc.f_91074_.m_21223_() + " <= " + threshold + "), paused");
+                LitematicaMixinMod.LOGGER.info(TAG + "Low health (" + mc.f_91074_.m_21223_() + " <= " + threshold + "), paused");
             }
             hudLine = "PAUSED (low health)";
             return true;
