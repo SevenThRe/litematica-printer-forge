@@ -35,12 +35,11 @@ public class BackpackInjector {
     private static Method mSendSetGhostSlotMessage;
     private static Method mCountItemInBackpack;
     private static boolean wasTriggerPressed = false;
-    // 自动打开背包注入的 pending 状态
     private static boolean autoOpenBackpack = false;
     private static int autoOpenTicks = 0;
     private static List<InjectPlan> pendingPlans = null;
 
-    /** 注入排序模式：0=Y升序（底部→顶部，默认）1=Y倒序（顶部→底部）2=扫描顺序 */
+    /** Inject sort modes: 0 = Y ascending (bottom→top, default), 1 = Y descending (top→bottom), 2 = scan order */
     public static int lastSortMode = 0;
 
     public static void applySort(List<InjectPlan> plans, int sortMode) {
@@ -49,7 +48,6 @@ public class BackpackInjector {
         } else if (sortMode == 1) {
             plans.sort((a, b) -> Integer.compare(b.lowestY, a.lowestY));
         }
-        // sortMode == 2 保持扫描顺序
     }
 
     public static String sortModeName(int sortMode) {
@@ -63,7 +61,7 @@ public class BackpackInjector {
     public static class InjectPlan {
         public final ItemStack stack;
         public int amount;
-        /** 该材料最低缺失位置的世界 Y（用于 Y 层级排序注入） */
+        /** World Y of this material's lowest missing position (used for Y-layer sorted injection) */
         public int lowestY = Integer.MAX_VALUE;
         public InjectPlan(ItemStack stack, int amount) {
             this.stack = stack;
@@ -83,7 +81,7 @@ public class BackpackInjector {
             Class<?> backpackUtil = Class.forName("com.backpackinjector.backpack.BackpackUtil");
             mIsSophisticatedLoaded = backpackUtil.getMethod("isSophisticatedLoaded");
             mGetStorageMenu = backpackUtil.getMethod("getStorageMenu", Minecraft.class);
-            // getRealInventorySlots 是 private static，必须用 getDeclaredMethod
+            // getRealInventorySlots is private static, must use getDeclaredMethod
             mGetRealSlots = backpackUtil.getDeclaredMethod("getRealInventorySlots", Object.class);
             mGetRealSlots.setAccessible(true);
             mSendSetGhostSlotMessage = backpackUtil.getMethod("sendSetGhostSlotMessage", ItemStack.class, Integer.TYPE);
@@ -112,12 +110,18 @@ public class BackpackInjector {
     }
 
     public static void openGui(Minecraft mc) {
+        // Prefer the placement currently selected in litematica, so BII always matches
+        // what the user has selected in the schematic browser.
+        SchematicPlacement selected = DataManager.getSchematicPlacementManager().getSelectedSchematicPlacement();
+        if (selected != null && selected.isEnabled()) {
+            openGuiFor(mc, selected);
+            return;
+        }
         List<SchematicPlacement> allPlacements = DataManager.getSchematicPlacementManager().getAllSchematicsPlacements();
         if (allPlacements == null || allPlacements.isEmpty()) {
             MessageHolder.sendMessageUnchecked("[BII] 未选择原理图");
             return;
         }
-        // 收集所有启用的原理图
         List<SchematicPlacement> enabled = new ArrayList<>();
         for (SchematicPlacement p : allPlacements) {
             if (p != null && p.isEnabled()) {
@@ -128,7 +132,6 @@ public class BackpackInjector {
             MessageHolder.sendMessageUnchecked("[BII] 没有启用的原理图");
             return;
         }
-        // 只有一张则直接用，多张则弹出选择器
         if (enabled.size() == 1) {
             openGuiFor(mc, enabled.get(0));
         } else {
@@ -136,23 +139,20 @@ public class BackpackInjector {
         }
     }
 
-    // 等待背包打开后显示 BII 界面的暂存
     private static SchematicPlacement pendingPlacement = null;
     private static int pendingShowGuiTicks = 0;
     private static boolean waitingToShowGui = false;
-    // 检测到 menu 后还要等槽位数据同步（OpenMenu 包与 ContainerSetContent 包不是同一时刻到）
+    // After the menu is detected, wait for slot data sync (OpenMenu and ContainerSetContent packets do not arrive at the same time)
     private static int menuReadyDelayTicks = 0;
     private static final int MENU_SYNC_DELAY = 10;
 
     public static void openGuiFor(Minecraft mc, SchematicPlacement placement) {
-        // 如果背包 GUI 已打开且数据已稳定（至少开过 MENU_SYNC_DELAY tick），直接计数显示
         Object menu = getBackpackMenu(mc);
         if (menu != null && menuReadyDelayTicks >= MENU_SYNC_DELAY) {
             showInjectGui(mc, placement, menu);
             return;
         }
 
-        // 自动打开背包，等 GUI 打开且槽位同步后再计数
         Inventory inv = mc.f_91074_.m_150109_();
         int backpackSlot = findBackpackSlot(inv);
         if (backpackSlot < 0) {
@@ -167,16 +167,13 @@ public class BackpackInjector {
         MessageHolder.sendMessageUnchecked("[BII] 正在打开背包...");
     }
 
-    /**
-     * 背包 GUI 已打开后：扫描原理图 + 从 menu 计数 + 弹出 BII 界面
-     */
     private static void showInjectGui(Minecraft mc, SchematicPlacement placement, Object menu) {
         Inventory inv = mc.f_91074_.m_150109_();
 
-        // 直接从原理图容器读取（不依赖 world 加载范围）
-        // 坐标公式必须与 LitematicaSchematic.placeBlocksToWorld 完全一致：
-        // getTransformedPlacementPosition（两层旋转/镜像）+ 变换后的子区域偏移 + placement origin。
-        // 漏掉后两步会扫到世界原点，导致算出的缺失材料与验证器完全不一致。
+        // Reads directly from the schematic container (independent of world load range).
+        // The coordinate formula must exactly match LitematicaSchematic.placeBlocksToWorld:
+        // getTransformedPlacementPosition (placement rotation/mirror) + transformed sub-region offset + placement origin.
+        // Omitting the last two steps scans the world origin, making the missing-material report inconsistent with the verifier.
         fi.dy.masa.litematica.schematic.LitematicaSchematic schematic = placement.getSchematic();
         if (schematic == null) {
             MessageHolder.sendMessageUnchecked("[BII] 原理图数据不可用");
@@ -204,8 +201,8 @@ public class BackpackInjector {
                                 .getTransformedPlacementPosition(new BlockPos(x, y, z), placement, subRegion)
                                 .m_121955_((net.minecraft.core.Vec3i) regionPosTransformed)
                                 .m_121955_((net.minecraft.core.Vec3i) placementOrigin);
-                        // 未加载区块按"缺失"计入（备料语义：那些位置迟早要放）；
-                        // 已加载区块与验证器同口径判定 MISSING + WRONG_BLOCK
+                        // Unloaded chunks count as missing (stocking semantics: those blocks will be placed eventually);
+                        // loaded chunks are judged with the same criteria as the verifier (MISSING + WRONG_BLOCK)
                         boolean missing;
                         if (mc.f_91073_.m_46805_(worldPos)) {
                             BlockState worldState = mc.f_91073_.m_8055_(worldPos);
@@ -230,9 +227,9 @@ public class BackpackInjector {
             return;
         }
 
-        // 从打开的背包 menu 计数。plans 包含全部短缺材料（与验证器缺失列表一致），
-        // amount 默认=总缺口（needed - inInv），让用户直观看到每种还差多少；
-        // 实际注入时在 doInject 中按背包实际存量截断（背包没货的自动跳过）。
+        // Count from the open backpack menu. plans covers all short materials (same list as the verifier's missing report);
+        // amount defaults to the total shortage (needed - inInv) so the user sees how much is still missing per item;
+        // doInject truncates by actual backpack stock at inject time (out-of-stock items are skipped automatically).
         List<InjectPlan> plans = new ArrayList<>();
         int shortageTotal = 0;
         boolean debug = LitematicaMixinMod.DEBUG_MESSAGE.getBooleanValue();
@@ -258,10 +255,36 @@ public class BackpackInjector {
             return;
         }
 
-        // 按上次选择的排序模式排列（默认 Y 升序：从建筑底部往上搭）
         applySort(plans, lastSortMode);
 
         mc.m_91152_(new BackpackInjectScreen(plans, placement.getName()));
+    }
+
+    /**
+     * Programmatic entry for the auto build director: same open/inject path as
+     * {@link #inject}, but without any GUI, and the verified deltas are reported
+     * back through the listener once the server syncs (or empty maps if the menu
+     * closed before verification).
+     */
+    public interface InjectResultListener {
+        void onResult(Map<Item, Integer> gotInv, Map<Item, Integer> gotStored);
+    }
+
+    private static InjectResultListener pendingListener = null;
+
+    public static void ensureMaterials(List<InjectPlan> plans, Minecraft mc, InjectResultListener listener) {
+        pendingListener = listener;
+        inject(plans, lastSortMode, mc);
+    }
+
+    /** True while a programmatic/manual injection cycle is in flight. */
+    public static boolean isBusy() {
+        return pendingSnapshot != null || waitingToShowGui || autoOpenBackpack;
+    }
+
+    /** Drops a pending result listener without touching the injection flow. */
+    public static void clearProgrammaticState() {
+        pendingListener = null;
     }
 
     public static void inject(List<InjectPlan> plans, int sortMode, Minecraft mc) {
@@ -272,15 +295,13 @@ public class BackpackInjector {
         lastSortMode = sortMode;
         applySort(plans, sortMode);
 
-        // 背包 GUI 已打开且数据稳定（BII 界面通常已导致背包关闭，这里只作快速路径）
+        // Fast path for an already-open, stable backpack GUI (the BII screen usually causes the backpack to close)
         Object menu = getBackpackMenu(mc);
         if (menu != null && menuReadyDelayTicks >= MENU_SYNC_DELAY) {
             doInject(plans, mc, menu);
-            mc.m_91152_(null);
             return;
         }
 
-        // 用户可能手动关闭了背包，重新打开
         Inventory inv = mc.f_91074_.m_150109_();
         int backpackSlot = findBackpackSlot(inv);
         if (backpackSlot < 0) {
@@ -298,10 +319,13 @@ public class BackpackInjector {
     }
 
     private static void doInject(List<InjectPlan> plans, Minecraft mc, Object menu) {
-        // "注入"语义 = 凭空创造缺失材料，全部走 SetGhostSlotMessage（服务端 Slot.set 直写）：
-        // 1) 每种材料拿至多一组（maxStackSize）ghost 直写玩家物品栏空格
-        // 2) 剩余缺口 ghost 注入背包存储空槽（填满背包备用）
-        // 总创造量 = 缺口量。QUICK_MOVE 点击包方案已废弃（服务端静默拒绝，原因未明，ghost 已实证可靠）
+        // "Inject" semantics = conjure missing materials out of thin air, all via SetGhostSlotMessage (direct server-side Slot.set write):
+        // 1) Up to one stack (maxStackSize) per material, ghost-written into empty player inventory slots
+        // 2) Remaining shortage ghost-injected into empty backpack storage slots (stock the backpack for later)
+        // Total created = shortage. The QUICK_MOVE-click approach was abandoned (server silently rejects it, cause unknown; ghost is proven reliable)
+        //
+        // Do not log "done" per send count — ghost is a one-way packet with no receipt and the server may reject it.
+        // Snapshot all menu slots before sending; 15 ticks later (once server state syncs back) log actual results from slot deltas.
         List<net.minecraft.world.inventory.Slot> slots = getRealSlots(menu);
         if (slots == null || slots.isEmpty()) {
             MessageHolder.sendMessageUnchecked("[BII] 无法读取背包槽位");
@@ -317,9 +341,11 @@ public class BackpackInjector {
             return;
         }
 
-        // 背包存储空槽（注入目标）
+        Map<Integer, ItemStack> snapshot = snapshotMenu(absMenu);
+        Map<Item, Integer> reqTaken = new LinkedHashMap<>();
+        Map<Item, Integer> reqStored = new LinkedHashMap<>();
+
         List<Integer> emptySlotIds = new ArrayList<>();
-        // 玩家物品栏在菜单中的空槽号（拿取目标）
         List<Integer> invSlotIds = new ArrayList<>();
         net.minecraft.world.Container playerInv = mc.f_91074_.m_150109_();
         for (net.minecraft.world.inventory.Slot s : absMenu.f_38839_) {
@@ -336,17 +362,15 @@ public class BackpackInjector {
             return;
         }
 
-        boolean debug = LitematicaMixinMod.DEBUG_MESSAGE.getBooleanValue();
         int totalTaken = 0;
         int totalStored = 0;
-        int takenKinds = 0;
+        int sentRequests = 0;
         int invIdx = 0;
         int bpIdx = 0;
 
         for (InjectPlan plan : plans) {
             if (plan.amount <= 0) continue;
             int maxPer = plan.stack.m_41741_();
-            // 1) 物品栏拿取：至多一组
             int take = Math.min(plan.amount, maxPer);
             int got = 0;
             while (got < take && invIdx < invSlotIds.size()) {
@@ -356,8 +380,8 @@ public class BackpackInjector {
                     return;
                 }
                 got += n;
+                sentRequests++;
             }
-            // 2) 背包注入：剩余缺口（物品栏实际拿到多少就从缺口扣多少）
             int toStore = plan.amount - got;
             int put = 0;
             while (put < toStore && bpIdx < emptySlotIds.size()) {
@@ -367,18 +391,110 @@ public class BackpackInjector {
                     return;
                 }
                 put += n;
+                sentRequests++;
             }
-            if (got > 0) takenKinds++;
+            if (got > 0) reqTaken.merge(plan.stack.m_41720_(), got, Integer::sum);
+            if (put > 0) reqStored.merge(plan.stack.m_41720_(), put, Integer::sum);
             totalTaken += got;
             totalStored += put;
-            if (debug) {
-                MessageHolder.sendMessageUnchecked("[BII] " + plan.stack.m_41786_().getString()
-                        + " 拿取" + got + " 存背包" + put);
-            }
         }
 
-        MessageHolder.sendMessageUnchecked("[BII] 完成：物品栏拿取 " + totalTaken + " 个（"
-                + takenKinds + " 种，每种至多一组），背包注入 " + totalStored + " 个");
+        if (sentRequests == 0) {
+            MessageHolder.sendMessageUnchecked("[BII] 没有可注入的请求（材料已足够或槽位不足）");
+            return;
+        }
+        pendingSnapshot = snapshot;
+        pendingReqTaken = reqTaken;
+        pendingReqStored = reqStored;
+        verifyTicksLeft = VERIFY_DELAY_TICKS;
+        MessageHolder.sendMessageUnchecked("[BII] 已发送 " + sentRequests + " 条注入请求（物品栏 "
+                + totalTaken + " / 背包 " + totalStored + "），等待服务端确认...");
+    }
+
+    // ===== Injection result verification (logs from slot deltas synced back from the server, not send counts) =====
+    private static Map<Integer, ItemStack> pendingSnapshot = null;
+    private static Map<Item, Integer> pendingReqTaken = null;
+    private static Map<Item, Integer> pendingReqStored = null;
+    private static int verifyTicksLeft = 0;
+    private static final int VERIFY_DELAY_TICKS = 15;
+
+    private static Map<Integer, ItemStack> snapshotMenu(net.minecraft.world.inventory.AbstractContainerMenu absMenu) {
+        Map<Integer, ItemStack> snap = new HashMap<>();
+        for (net.minecraft.world.inventory.Slot s : absMenu.f_38839_) {
+            ItemStack st = s.m_7993_();
+            snap.put(s.f_40219_, st.m_41619_() ? ItemStack.f_41583_ : st.m_41777_());
+        }
+        return snap;
+    }
+
+    private static void finishVerify(Minecraft mc) {
+        Map<Integer, ItemStack> before = pendingSnapshot;
+        Map<Item, Integer> reqTaken = pendingReqTaken;
+        Map<Item, Integer> reqStored = pendingReqStored;
+        InjectResultListener listener = pendingListener;
+        pendingListener = null;
+        pendingSnapshot = null;
+        pendingReqTaken = null;
+        pendingReqStored = null;
+        boolean debug = LitematicaMixinMod.DEBUG_MESSAGE.getBooleanValue();
+        Object menuObj = getBackpackMenu(mc);
+        if (!(menuObj instanceof net.minecraft.world.inventory.AbstractContainerMenu absMenu)) {
+            MessageHolder.sendMessageUnchecked("[BII] 注入请求已发送，但背包界面已关闭，无法验证实际结果");
+            if (listener != null) {
+                listener.onResult(java.util.Collections.emptyMap(), java.util.Collections.emptyMap());
+            }
+            return;
+        }
+        net.minecraft.world.Container playerInv = mc.f_91074_.m_150109_();
+        Map<Item, Integer> gotInv = new LinkedHashMap<>();
+        Map<Item, Integer> gotStored = new LinkedHashMap<>();
+        for (net.minecraft.world.inventory.Slot s : absMenu.f_38839_) {
+            ItemStack was = before.getOrDefault(s.f_40219_, ItemStack.f_41583_);
+            ItemStack now = s.m_7993_();
+            int delta = 0;
+            if (!now.m_41619_() && now.m_41720_() == was.m_41720_()) {
+                delta = now.m_41613_() - was.m_41613_();
+            } else if (!now.m_41619_() && was.m_41619_()) {
+                delta = now.m_41613_();
+            }
+            if (delta > 0) {
+                (s.f_40218_ == playerInv ? gotInv : gotStored).merge(now.m_41720_(), delta, Integer::sum);
+            }
+        }
+        int totalReq = 0;
+        int totalGot = 0;
+        int confirmedKinds = 0;
+        java.util.Set<Item> allReq = new java.util.LinkedHashSet<>();
+        allReq.addAll(reqTaken.keySet());
+        allReq.addAll(reqStored.keySet());
+        List<String> partial = new ArrayList<>();
+        for (Item it : allReq) {
+            int req = reqTaken.getOrDefault(it, 0) + reqStored.getOrDefault(it, 0);
+            int got = gotInv.getOrDefault(it, 0) + gotStored.getOrDefault(it, 0);
+            totalReq += req;
+            totalGot += Math.min(got, req);
+            if (got >= req) {
+                confirmedKinds++;
+            } else {
+                partial.add(new ItemStack(it).m_41786_().getString() + "(" + got + "/" + req + ")");
+            }
+            if (debug) {
+                MessageHolder.sendMessageUnchecked("[BII] 验证: " + new ItemStack(it).m_41786_().getString()
+                        + " 物品栏+" + gotInv.getOrDefault(it, 0) + " 背包+" + gotStored.getOrDefault(it, 0)
+                        + "（请求 " + req + "）");
+            }
+        }
+        if (totalReq <= 0) {
+            MessageHolder.sendMessageUnchecked("[BII] 无待验证请求");
+        } else if (!partial.isEmpty()) {
+            MessageHolder.sendMessageUnchecked("[BII] 部分注入：实际 " + totalGot + " / 请求 " + totalReq
+                    + "；未生效: " + String.join("、", partial));
+        } else {
+            MessageHolder.sendMessageUnchecked("[BII] 注入确认：" + confirmedKinds + " 种共 " + totalGot + " 个已实际写入");
+        }
+        if (listener != null) {
+            listener.onResult(gotInv, gotStored);
+        }
         mc.m_91152_(null);
     }
 
@@ -392,11 +508,7 @@ public class BackpackInjector {
         }
     }
 
-    /**
-     * 每 tick 调用：处理自动打开背包后的操作。
-     */
     public static void onClientTick(Minecraft mc) {
-        // 跟踪背包 menu 已稳定存在多少 tick（用于槽位数据同步等待）
         Object currentMenu = getBackpackMenu(mc);
         if (currentMenu != null) {
             menuReadyDelayTicks++;
@@ -404,7 +516,14 @@ public class BackpackInjector {
             menuReadyDelayTicks = 0;
         }
 
-        // 阶段1：等待背包 GUI 打开且槽位同步，然后显示 BII 界面
+        if (pendingSnapshot != null) {
+            verifyTicksLeft--;
+            if (verifyTicksLeft <= 0) {
+                finishVerify(mc);
+            }
+            return;
+        }
+
         if (waitingToShowGui) {
             pendingShowGuiTicks++;
             if (pendingShowGuiTicks > 60) {
@@ -421,7 +540,6 @@ public class BackpackInjector {
             return;
         }
 
-        // 阶段2：注入流程（点击确认后）
         if (!autoOpenBackpack) return;
         autoOpenTicks++;
 
@@ -437,11 +555,10 @@ public class BackpackInjector {
             MessageHolder.sendMessageUnchecked("[BII] 背包已同步，开始注入...");
             doInject(pendingPlans, mc, currentMenu);
             pendingPlans = null;
-            mc.m_91152_(null);
         }
     }
 
-    private static int findBackpackSlot(Inventory inv) {
+    public static int findBackpackSlot(Inventory inv) {
         for (int i = 0; i < inv.m_6643_(); i++) {
             ItemStack stack = inv.m_8020_(i);
             if (stack.m_41619_()) continue;
@@ -453,7 +570,7 @@ public class BackpackInjector {
         return -1;
     }
 
-    private static void sendBackpackOpenPacket(Minecraft mc, int slotIndex) {
+    public static void sendBackpackOpenPacket(Minecraft mc, int slotIndex) {
         try {
             Class<?> msgClass = Class.forName("net.p3pp3rf1y.sophisticatedbackpacks.network.BackpackOpenMessage");
             Object msg = msgClass.getConstructor(int.class).newInstance(slotIndex);
@@ -493,7 +610,7 @@ public class BackpackInjector {
         return justPressed;
     }
 
-    private static Object getBackpackMenu(Minecraft mc) {
+    public static Object getBackpackMenu(Minecraft mc) {
         try {
             return mGetStorageMenu.invoke(null, mc);
         } catch (Exception e) {
@@ -530,7 +647,8 @@ public class BackpackInjector {
     }
 
     /**
-     * 不依赖背包 UI 打开，直接通过 Capability 读取玩家背包中所有 Sophisticated Backpacks 的内容。
+     * Reads the contents of all Sophisticated Backpacks in the player inventory via Capability,
+     * without opening the backpack UI.
      */
     private static int countInPlayerBackpacksByCapability(Inventory inv, Item targetItem) {
         int count = 0;

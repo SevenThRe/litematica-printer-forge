@@ -28,6 +28,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
@@ -41,19 +42,26 @@ public class MissingBlockEsp {
         public final BlockPos pos;
         public final Item item;
         public final net.minecraft.world.level.block.Block block;
+        // Expected block after replacement (coralReplace mapping target), for real-time comparison
+        public final net.minecraft.world.level.block.Block expected;
 
         public MissingEntry(BlockPos pos, Item item, net.minecraft.world.level.block.Block block) {
+            this(pos, item, block, BlockReplacer.resolveBlock(block));
+        }
+
+        public MissingEntry(BlockPos pos, Item item, net.minecraft.world.level.block.Block block, net.minecraft.world.level.block.Block expected) {
             this.pos = pos;
             this.item = item;
             this.block = block;
+            this.expected = expected;
         }
     }
 
     private static volatile List<MissingEntry> cached = Collections.emptyList();
 
-    // ===== 增量分片扫描状态 =====
-    // 整张原理图可能有数万到数十万方块，一次性扫描会造成周期性卡顿。
-    // 改为每 tick 只处理 BLOCK_BUDGET 个方块，一轮完整扫描分散到多个 tick。
+    // ===== Incremental sharded scan state =====
+    // A full schematic can hold tens to hundreds of thousands of blocks; a one-shot scan causes periodic stutters.
+    // Instead, process BLOCK_BUDGET blocks per tick, spreading a full scan over multiple ticks.
     private static final int BLOCK_BUDGET = 16384;
 
     private static final class ScanTask {
@@ -100,7 +108,6 @@ public class MissingBlockEsp {
             resetScan();
             return;
         }
-        // 原理图列表变化（增删/开关/移动）时从头开始一轮
         String sig = buildPlacementSignature();
         if (!sig.equals(placementSignature)) {
             placementSignature = sig;
@@ -179,23 +186,32 @@ public class MissingBlockEsp {
                             .m_121955_((net.minecraft.core.Vec3i) t.origin);
                     boolean inY = worldPos.m_123342_() >= worldBottomY && worldPos.m_123342_() <= worldTopY;
                     if (!inY) {
-                        // 超出世界高度范围，跳过
                     } else if (world.m_46805_(worldPos)) {
-                        // 已加载区块：与验证器同口径判定
+                        // Loaded chunk: judged with the same criteria as the verifier
                         BlockState worldState = world.m_8055_(worldPos);
                         if (worldState.m_60795_() || worldState.m_247087_()
                                 || (worldState.m_60734_() != schemState.m_60734_()
                                     && worldState.m_60734_() != BlockReplacer.resolveBlock(schemState.m_60734_()))) {
-                            Item item = schemState.m_60734_().m_5456_();
-                            if (item != Items.f_41852_) {
-                                item = BlockReplacer.resolve(item);
+                            // A falling block with free space below in the world AND no support block in the
+                            // schematic can never be placed in vanilla survival; do not highlight it
+                            BlockState belowWorld = world.m_8055_(worldPos.m_7495_());
+                            WorldSchematic schemWorld = SchematicWorldHandler.getSchematicWorld();
+                            BlockState belowSchem = schemWorld == null ? null : schemWorld.m_8055_(worldPos.m_7495_());
+                            boolean neverBuildable = schemState.m_60734_() instanceof FallingBlock
+                                    && belowSchem != null && belowSchem.m_60795_()
+                                    && (belowWorld.m_60795_() || !belowWorld.m_60819_().m_76178_());
+                            if (!neverBuildable) {
+                                Item item = schemState.m_60734_().m_5456_();
                                 if (item != Items.f_41852_) {
-                                    accum.add(new MissingEntry(worldPos.m_7949_(), item, schemState.m_60734_()));
+                                    item = BlockReplacer.resolve(item);
+                                    if (item != Items.f_41852_) {
+                                        accum.add(new MissingEntry(worldPos.m_7949_(), item, schemState.m_60734_()));
+                                    }
                                 }
                             }
                         }
                     } else {
-                        // 未加载区块：按缺失计入（原理图要求放置但无法验证）
+                        // Unloaded chunk: counted as missing (schematic requires placement but it cannot be verified)
                         Item item = schemState.m_60734_().m_5456_();
                         if (item != Items.f_41852_) {
                             item = BlockReplacer.resolve(item);
@@ -205,7 +221,6 @@ public class MissingBlockEsp {
                         }
                     }
                 }
-                // 推进游标
                 if (++bx >= size.m_123341_()) {
                     bx = 0;
                     if (++by >= size.m_123342_()) {
@@ -227,7 +242,6 @@ public class MissingBlockEsp {
         }
 
         if (taskIdx >= tasks.size()) {
-            // 一轮完成：排序、裁剪、发布，立即开始下一轮
             double px = mc.f_91074_.m_20185_();
             double py = mc.f_91074_.m_20186_();
             double pz = mc.f_91074_.m_20189_();
@@ -267,7 +281,7 @@ public class MissingBlockEsp {
         if (!verifyMode) {
             heldFilter = new HashSet<>();
             if (LitematicaMixinMod.ESP_HIGHLIGHT_BY_INVENTORY.getBooleanValue()) {
-                // 按玩家物品栏材料种类高亮（打印机会自动 swap 手持，手持模式高亮会闪烁；物品栏集合更稳定）
+                // Highlight by the set of items in the player inventory (the printer auto-swaps the held item, so held-item highlighting flickers; the inventory set is stable)
                 net.minecraft.world.entity.player.Inventory inv = mc.f_91074_.m_150109_();
                 for (int i = 0; i < inv.m_6643_(); i++) {
                     ItemStack st = inv.m_8020_(i);
@@ -311,8 +325,11 @@ public class MissingBlockEsp {
         buffer.m_166779_(VertexFormat.Mode.QUADS, DefaultVertexFormat.f_85815_);
         for (MissingEntry entry : entries) {
             if (heldFilter != null && !heldFilter.contains(entry.item)) continue;
-            // 实时检查：已加载区块中方块已放对的，立即跳过（不等扫描轮次刷新）
-            if (world.m_46805_(entry.pos) && world.m_8055_(entry.pos).m_60734_() == entry.block) continue;
+            // Real-time check: if the block is already correct (original or replaced) in a loaded chunk, skip immediately without waiting for the next scan round
+            if (world.m_46805_(entry.pos)) {
+                Block wb = world.m_8055_(entry.pos).m_60734_();
+                if (wb == entry.block || wb == entry.expected) continue;
+            }
             addBoxQuads(buffer, matrix, entry.pos, r, g, b, a);
         }
         tesselator.m_85914_();
@@ -322,7 +339,7 @@ public class MissingBlockEsp {
             if (heldFilter != null && !heldFilter.contains(entry.item)) continue;
             if (world.m_46805_(entry.pos)) {
                 Block wb = world.m_8055_(entry.pos).m_60734_();
-                if (wb == entry.block || wb == BlockReplacer.resolveBlock(entry.block)) continue;
+                if (wb == entry.block || wb == entry.expected) continue;
             }
             addBoxEdges(buffer, matrix, entry.pos, r, g, b, 255);
         }

@@ -78,6 +78,22 @@ public class LitematicaMixinMod {
     public static final ConfigInteger BI_MAX_SLOTS = new ConfigInteger("printerBackpackInjectMaxSlots", 5, 1, 54, "Max backpack ghost slots to fill per cycle");
     public static final ConfigHotkey BII_INJECT_HOTKEY = new ConfigHotkey("printerBackpackInjectTrigger", "", KeybindSettings.PRESS_ALLOWEXTRA, "Trigger batch material injection into backpack");
     public static final ConfigHotkey PRINTER_HOTKEY = new ConfigHotkey("printerActivationHotkey", "V", KeybindSettings.PRESS_ALLOWEXTRA, "Hold to activate printer (places blocks in range)");
+    // Auto Build Director configs
+    public static final ConfigHotkey AUTO_BUILD_TOGGLE_HOTKEY = new ConfigHotkey("autoBuildToggleHotkey", "", KeybindSettings.PRESS_ALLOWEXTRA, "Toggle auto build director on/off");
+    public static final ConfigHotkey AUTO_BUILD_PAUSE_HOTKEY = new ConfigHotkey("autoBuildPauseHotkey", "", KeybindSettings.PRESS_ALLOWEXTRA, "Pause/resume auto build director");
+    public static final ConfigHotkey AUTO_BUILD_MARK_TERMINAL_HOTKEY = new ConfigHotkey("autoBuildMarkTerminalHotkey", "", KeybindSettings.PRESS_ALLOWEXTRA, "Mark looked-at RS grid terminal for auto build");
+    public static final ConfigBoolean AUTO_BUILD_SELECTED_ONLY = new ConfigBoolean("autoBuildSelectedPlacementOnly", false, "Only build the currently selected schematic placement");
+    public static final ConfigBoolean AUTO_BUILD_SKIP_MISSING = new ConfigBoolean("autoBuildSkipMissing", false, "Skip blocks with missing materials instead of pausing");
+    public static final ConfigBoolean AUTO_BUILD_PRINT_WHILE_MOVING = new ConfigBoolean("autoBuildPrintWhileMoving", false, "Allow printing while Baritone is navigating");
+    public static final ConfigBoolean AUTO_BUILD_ALLOW_PATH_BREAK = new ConfigBoolean("autoBuildAllowPathBreak", true, "Allow Baritone to break blocks while pathing");
+    public static final ConfigBoolean AUTO_BUILD_ALLOW_SCAFFOLD = new ConfigBoolean("autoBuildAllowScaffold", true, "Allow automatic scaffolding for high blocks");
+    public static final ConfigBoolean AUTO_BUILD_RS_EXTRACT = new ConfigBoolean("autoBuildRsExtract", true, "Allow extracting materials from Refined Storage");
+    public static final ConfigBoolean AUTO_BUILD_SB_TRANSFER = new ConfigBoolean("autoBuildSbTransfer", true, "Allow transferring materials from Sophisticated Backpacks");
+    public static final ConfigInteger AUTO_BUILD_LOW_HEALTH = new ConfigInteger("autoBuildLowHealthThreshold", 6, 0, 20, "Pause auto build when health below this (0=disable)");
+    public static final ConfigInteger AUTO_BUILD_ARRIVE_TIMEOUT = new ConfigInteger("autoBuildArriveTimeoutTicks", 200, 20, 2000, "Ticks to wait for Baritone arrival before retry");
+    public static final ConfigInteger AUTO_BUILD_UNREACHABLE_RETRIES = new ConfigInteger("autoBuildUnreachableRetries", 3, 0, 10, "Retries before pausing when target unreachable");
+    public static final ConfigInteger AUTO_BUILD_MENU_OP_RETRIES = new ConfigInteger("autoBuildMenuOpRetries", 3, 1, 10, "Retries for container menu operations");
+    public static final ConfigString AUTO_BUILD_TERMINAL_POS = new ConfigString("autoBuildTerminalPos", "", "Saved RS grid terminal position (x,y,z). Empty = auto-detect");
     public static final ConfigBoolean ESP_HIGHLIGHT_MISSING = new ConfigBoolean("espHighlightMissingBlocks", true, "Highlight schematic missing blocks through walls (ESP)");
     public static final ConfigBoolean ESP_VERIFICATION_MODE = new ConfigBoolean("espVerificationMode", false, "Verification mode: highlight ALL missing blocks; when off, only highlight blocks matching held item");
     public static final ConfigBoolean ESP_SCAN_ALL = new ConfigBoolean("espScanEntireSchematic", true, "Scan the entire schematic for missing blocks instead of only around the player");
@@ -88,11 +104,12 @@ public class LitematicaMixinMod {
     public static final ConfigBoolean ESP_HIGHLIGHT_BY_INVENTORY = new ConfigBoolean("espHighlightByInventory", false, "Highlight missing blocks whose material is present in player inventory (instead of held item only)");
     public static final ConfigColor ESP_HELD_COLOR = new ConfigColor("espHeldItemColor", "#FF40E0FF", "Color of held-item missing block ESP highlight (non-verification mode)");
     public static final ConfigBoolean CORAL_REPLACE_ENABLED = new ConfigBoolean("coralReplaceEnabled", false, "Enable schematic block replacement (applies to BII, ESP, and printer placement)");
+    public static final ConfigHotkey REPLACE_EDITOR_HOTKEY = new ConfigHotkey("printerReplaceEditorHotkey", "", KeybindSettings.PRESS_ALLOWEXTRA, "Open the visual block replacement mapping editor");
     public static final ConfigStringList CORAL_REPLACE_MAPPINGS = new ConfigStringList("blockReplaceMappings",
             com.google.common.collect.ImmutableList.of(),
             "Block replacement mappings, one per line: from=to (e.g. minecraft:horn_coral_block=minecraft:sponge)");
     public static ImmutableList.Builder<IConfigBase> originalList = ImmutableList.builder();
-    public static final ImmutableList<IConfigBase> betterList = originalList.addAll((Iterable)ImmutableList.of((Object)VERIFY_INVENTORY, (Object)USE_INVENTORY_CACHE, (Object)PRINTER_OFF, (Object)PRINTER_ONLY_FAKE_ROTATION_MODE, (Object)DISABLE_SYNC, (Object)DEBUG_MESSAGE, (Object)DEBUG_EXTRA_MESSAGE, (Object)DEBUG_ORDER_PLACEMENTS, (Object)DEBUG_PACKET_SYNC, (Object)DISABLE_SINGLEPLAYER_HANDLE, (Object)SLEEP_AFTER_CONSUME, (Object)EASY_PLACE_MODE_RANGE_X, (Object[])new ConfigBase[]{EASY_PLACE_MODE_RANGE_Y, EASY_PLACE_MODE_RANGE_Z, EASY_PLACE_CACHE_TIME, PRINTER_MAX_BLOCKS, PRINTER_MAX_ITEM_CHANGES, PRINTER_BREAK_BLOCKS, PRINTER_BREAK_IGNORE_EXTRA, PRINTER_BREAK_EXTRA_BLOCKS, PRINTER_SKIP_UNKNOWN_BLOCKSTATE, EASY_PLACE_MODE_DELAY, EASY_PLACE_MODE_HOTBAR_ONLY, FLIPPIN_CACTUS, INVENTORY_OPERATIONS, INVENTORY_OPERATIONS_WAIT, INVENTORY_OPERATIONS_RETRY, INVENTORY_OPERATIONS_CLOSE_SCREEN, INVENTORY_OPERATIONS_FILTER_ALLOW_NAMED, CLEAR_AREA_MODE, PRINTER_PLACE_ICE, PRINTER_PLACE_MINECART, PRINTER_CLEAR_FLUIDS_AUTOMATICALLY, CLEAR_AREA_MODE_COBBLESTONE, CLEAR_AREA_MODE_SNOWPREVENT, ACCURATE_BLOCK_PLACEMENT, PRINTER_WATERLOGGED_WATER_FIRST, PRINTER_PUMPKIN_PIE_FOR_COMPOSTER, ADVANCED_ACCURATE_BLOCK_PLACEMENT, PRINTER_SMART_REDSTONE_AVOID, PRINTER_OBSERVER_AVOID_ALL, PRINTER_SUPPRESS_PUSH_LIMIT, AVOID_CHECK_ONLY_PISTONS, BEDROCK_BREAKING, BEDROCK_BREAKING_FORCE_TORCH, BEDROCK_BREAKING_RANGE_SAFE, BEDROCK_BREAKING_CLEAR_WAIT, FAKE_ROTATION_BETA, FAKE_ROTATION_TICKS, FAKE_ROTATION_LIMIT, BII_ENABLED, BI_MAX_SLOTS, BII_INJECT_HOTKEY, PRINTER_HOTKEY, ESP_HIGHLIGHT_MISSING, ESP_VERIFICATION_MODE, ESP_HIGHLIGHT_BY_INVENTORY, ESP_SCAN_ALL, ESP_SCAN_INTERVAL, ESP_SCAN_RANGE, ESP_MAX_RENDER, ESP_MISSING_COLOR, ESP_HELD_COLOR, CORAL_REPLACE_ENABLED, CORAL_REPLACE_MAPPINGS})).build();
+    public static final ImmutableList<IConfigBase> betterList = originalList.addAll((Iterable)ImmutableList.of((Object)VERIFY_INVENTORY, (Object)USE_INVENTORY_CACHE, (Object)PRINTER_OFF, (Object)PRINTER_ONLY_FAKE_ROTATION_MODE, (Object)DISABLE_SYNC, (Object)DEBUG_MESSAGE, (Object)DEBUG_EXTRA_MESSAGE, (Object)DEBUG_ORDER_PLACEMENTS, (Object)DEBUG_PACKET_SYNC, (Object)DISABLE_SINGLEPLAYER_HANDLE, (Object)SLEEP_AFTER_CONSUME, (Object)EASY_PLACE_MODE_RANGE_X, (Object[])new ConfigBase[]{EASY_PLACE_MODE_RANGE_Y, EASY_PLACE_MODE_RANGE_Z, EASY_PLACE_CACHE_TIME, PRINTER_MAX_BLOCKS, PRINTER_MAX_ITEM_CHANGES, PRINTER_BREAK_BLOCKS, PRINTER_BREAK_IGNORE_EXTRA, PRINTER_BREAK_EXTRA_BLOCKS, PRINTER_SKIP_UNKNOWN_BLOCKSTATE, EASY_PLACE_MODE_DELAY, EASY_PLACE_MODE_HOTBAR_ONLY, FLIPPIN_CACTUS, INVENTORY_OPERATIONS, INVENTORY_OPERATIONS_WAIT, INVENTORY_OPERATIONS_RETRY, INVENTORY_OPERATIONS_CLOSE_SCREEN, INVENTORY_OPERATIONS_FILTER_ALLOW_NAMED, CLEAR_AREA_MODE, PRINTER_PLACE_ICE, PRINTER_PLACE_MINECART, PRINTER_CLEAR_FLUIDS_AUTOMATICALLY, CLEAR_AREA_MODE_COBBLESTONE, CLEAR_AREA_MODE_SNOWPREVENT, ACCURATE_BLOCK_PLACEMENT, PRINTER_WATERLOGGED_WATER_FIRST, PRINTER_PUMPKIN_PIE_FOR_COMPOSTER, ADVANCED_ACCURATE_BLOCK_PLACEMENT, PRINTER_SMART_REDSTONE_AVOID, PRINTER_OBSERVER_AVOID_ALL, PRINTER_SUPPRESS_PUSH_LIMIT, AVOID_CHECK_ONLY_PISTONS, BEDROCK_BREAKING, BEDROCK_BREAKING_FORCE_TORCH, BEDROCK_BREAKING_RANGE_SAFE, BEDROCK_BREAKING_CLEAR_WAIT, FAKE_ROTATION_BETA, FAKE_ROTATION_TICKS, FAKE_ROTATION_LIMIT, BII_ENABLED, BI_MAX_SLOTS, BII_INJECT_HOTKEY, PRINTER_HOTKEY, ESP_HIGHLIGHT_MISSING, ESP_VERIFICATION_MODE, ESP_HIGHLIGHT_BY_INVENTORY, ESP_SCAN_ALL, ESP_SCAN_INTERVAL, ESP_SCAN_RANGE, ESP_MAX_RENDER, ESP_MISSING_COLOR, ESP_HELD_COLOR, CORAL_REPLACE_ENABLED, CORAL_REPLACE_MAPPINGS, REPLACE_EDITOR_HOTKEY, AUTO_BUILD_TOGGLE_HOTKEY, AUTO_BUILD_PAUSE_HOTKEY, AUTO_BUILD_MARK_TERMINAL_HOTKEY, AUTO_BUILD_SELECTED_ONLY, AUTO_BUILD_SKIP_MISSING, AUTO_BUILD_PRINT_WHILE_MOVING, AUTO_BUILD_ALLOW_PATH_BREAK, AUTO_BUILD_ALLOW_SCAFFOLD, AUTO_BUILD_RS_EXTRACT, AUTO_BUILD_SB_TRANSFER, AUTO_BUILD_LOW_HEALTH, AUTO_BUILD_ARRIVE_TIMEOUT, AUTO_BUILD_UNREACHABLE_RETRIES, AUTO_BUILD_MENU_OP_RETRIES, AUTO_BUILD_TERMINAL_POS})).build();
 
     public LitematicaMixinMod() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
@@ -103,5 +120,113 @@ public class LitematicaMixinMod {
         LOGGER.info("[Printer] : YeeFuckinHaw");
         MinecraftForge.EVENT_BUS.register((Object)this);
         MinecraftForge.EVENT_BUS.register(MissingBlockEsp.class);
+        xyz.jxmm.litematica_printer_forge.autobuild.director.BuildCommand.register();
+    }
+
+    private static boolean isHotkeyPressed(ConfigHotkey hotkey, net.minecraft.client.Minecraft mc) {
+        boolean pressed = false;
+        try {
+            java.util.List<Integer> keys = hotkey.getKeybind().getKeys();
+            if (keys != null) {
+                long handle = mc.m_91268_().m_85439_();
+                for (Integer keyCode : keys) {
+                    if (keyCode == null) continue;
+                    boolean down = keyCode < 0
+                            ? org.lwjgl.glfw.GLFW.glfwGetMouseButton(handle, keyCode + 100) == 1
+                            : keyCode > 0 && org.lwjgl.glfw.GLFW.glfwGetKey(handle, keyCode) == 1;
+                    if (down) {
+                        pressed = true;
+                        break;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return pressed;
+    }
+
+    private static boolean defaultMappingsSeeded = false;
+    private static boolean wasEditorPressed = false;
+    private static boolean wasAutoBuildTogglePressed = false;
+    private static boolean wasAutoBuildPausePressed = false;
+    private static boolean wasMarkTerminalPressed = false;
+
+    // Hotkey to open the visual block replacement mapping editor.
+    @net.minecraftforge.eventbus.api.SubscribeEvent
+    public void onClientTick(net.minecraftforge.event.TickEvent.ClientTickEvent event) {
+        if (event.phase != net.minecraftforge.event.TickEvent.Phase.END) {
+            return;
+        }
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.m_91087_();
+
+        // Replacement mapping editor hotkey (edge-triggered)
+        boolean pressed = isHotkeyPressed(REPLACE_EDITOR_HOTKEY, mc);
+        boolean justPressed = pressed && !wasEditorPressed;
+        wasEditorPressed = pressed;
+        if (justPressed && mc.f_91073_ != null && mc.f_91080_ == null) {
+            xyz.jxmm.litematica_printer_forge.gui.ReplaceMappingScreen.open(mc);
+            return;
+        }
+
+        // Auto Build Director hotkeys (edge-triggered GLFW polling)
+        boolean abToggle = isHotkeyPressed(AUTO_BUILD_TOGGLE_HOTKEY, mc);
+        boolean abToggleJust = abToggle && !wasAutoBuildTogglePressed;
+        wasAutoBuildTogglePressed = abToggle;
+        if (abToggleJust && mc.f_91073_ != null) {
+            xyz.jxmm.litematica_printer_forge.autobuild.director.AutoBuildDirector.toggle();
+        }
+
+        boolean abPause = isHotkeyPressed(AUTO_BUILD_PAUSE_HOTKEY, mc);
+        boolean abPauseJust = abPause && !wasAutoBuildPausePressed;
+        wasAutoBuildPausePressed = abPause;
+        if (abPauseJust && mc.f_91073_ != null) {
+            xyz.jxmm.litematica_printer_forge.autobuild.director.AutoBuildDirector.pauseOrResume();
+        }
+
+        boolean abMark = isHotkeyPressed(AUTO_BUILD_MARK_TERMINAL_HOTKEY, mc);
+        boolean abMarkJust = abMark && !wasMarkTerminalPressed;
+        wasMarkTerminalPressed = abMark;
+        if (abMarkJust && mc.f_91073_ != null) {
+            xyz.jxmm.litematica_printer_forge.autobuild.director.AutoBuildDirector.markTerminal();
+        }
+
+        // Auto Build Director tick (zero overhead when not running)
+        xyz.jxmm.litematica_printer_forge.autobuild.director.AutoBuildDirector.tick(mc);
+
+        // Seed built-in replacement mapping lines into an empty blockReplaceMappings list.
+        // Runs once per login AFTER litematica loaded the config (player in world), otherwise
+        // the seeded values are overwritten by the config file load.
+        // Also drops legacy lines with invalid copper registry names (exposed/weathered/oxidized_copper_block).
+        if (mc.f_91074_ == null) {
+            defaultMappingsSeeded = false;
+            return;
+        }
+        if (defaultMappingsSeeded) {
+            return;
+        }
+        defaultMappingsSeeded = true;
+        try {
+            java.util.List<String> cur = CORAL_REPLACE_MAPPINGS.getStrings();
+            boolean changed = false;
+            java.util.List<String> cleaned = new java.util.ArrayList<>();
+            if (cur != null) {
+                for (String s : cur) {
+                    if (s != null && s.matches(".*minecraft:(exposed|weathered|oxidized)_copper_block\\s*=.*")) {
+                        changed = true;
+                        continue;
+                    }
+                    cleaned.add(s);
+                }
+            }
+            if (cleaned.isEmpty()) {
+                CORAL_REPLACE_MAPPINGS.setStrings(xyz.jxmm.litematica_printer_forge.utils.BlockReplacer.getDefaultMappingLines());
+                LOGGER.info("[Printer] seeded default blockReplaceMappings into config");
+            } else if (changed) {
+                CORAL_REPLACE_MAPPINGS.setStrings(cleaned);
+                LOGGER.info("[Printer] removed invalid legacy blockReplaceMappings lines");
+            }
+        } catch (Exception e) {
+            LOGGER.warn("[Printer] failed to fix blockReplaceMappings", e);
+        }
     }
 }

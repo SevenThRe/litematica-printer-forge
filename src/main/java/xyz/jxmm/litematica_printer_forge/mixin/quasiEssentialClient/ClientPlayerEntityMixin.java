@@ -14,18 +14,20 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import xyz.jxmm.litematica_printer_forge.utils.FakeAccurateBlockPlacement;
 
 /*
- * Forge 1.20.1 LocalPlayer#m_108640_ (sendPosition) 中
- * ClientPacketListener#m_104955_ (send) 调用的真实顺序：
+ * Real order of ClientPacketListener#m_104955_ (send) calls inside
+ * Forge 1.20.1 LocalPlayer#m_108640_ (sendPosition):
  *   ordinal 0: ServerboundPlayerCommandPacket (sneak)
  *   ordinal 1: ServerboundMovePlayerPacket.PosRot (fall-flying, y=-999)
- *   ordinal 2: ServerboundMovePlayerPacket.PosRot (正常：位置+朝向都变化)
- *   ordinal 3: ServerboundMovePlayerPacket.Pos    (仅位置变化，不带朝向，无需拦截)
- *   ordinal 4: ServerboundMovePlayerPacket.Rot    (仅朝向变化)
+ *   ordinal 2: ServerboundMovePlayerPacket.PosRot (normal: position + rotation both change)
+ *   ordinal 3: ServerboundMovePlayerPacket.Pos    (position only, no rotation, no interception needed)
+ *   ordinal 4: ServerboundMovePlayerPacket.Rot    (rotation only)
  *   ordinal 5: ServerboundMovePlayerPacket.StatusOnly
  *
- * 原移植版沿用 Fabric Yarn 字节码的 ordinal(2/3/5)，在 Forge 上错位：
- * 站立 PosRot 被改成 y=-999 的飞行包，而真正会覆盖假朝向的仅朝向 Rot 包(ordinal 4)
- * 反而没有被拦截，导致服务器端玩家朝向被真实视角覆盖，楼梯等朝向方块方向错误。
+ * The original port reused the Fabric Yarn bytecode ordinals (2/3/5), which are shifted on Forge:
+ * the standing PosRot got rewritten into a y=-999 flying packet, while the rotation-only Rot packet
+ * (ordinal 4) — the one that actually overwrites the fake orientation — was left unintercepted, so the
+ * server-side player orientation was overwritten by the real view direction and orientation blocks
+ * such as stairs faced the wrong way.
  */
 @Mixin(value = {LocalPlayer.class}, priority = 1200)
 public abstract class ClientPlayerEntityMixin extends Player {

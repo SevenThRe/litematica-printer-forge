@@ -72,20 +72,17 @@ public class BackpackInjectScreen extends Screen {
             ItemStack stack = plan.stack;
             int y = LIST_Y + (i - scroll) * ROW_HEIGHT;
 
-            // 背景
             graphics.m_280509_(LIST_X, y, LIST_X + LIST_WIDTH, y + ROW_HEIGHT - 2, 0x80000000);
 
-            // 物品图标
             graphics.m_280480_(stack, LIST_X + 4, y + 2);
 
-            // 名称与数量
             String name = stack.m_41786_().getString();
             if (name.length() > 15) name = name.substring(0, 14) + "…";
             graphics.m_280056_(this.f_96547_, name, LIST_X + 24, y + 6, 0xFFFFFF, false);
             graphics.m_280056_(this.f_96547_, "Y:" + (plan.lowestY == Integer.MAX_VALUE ? "?" : plan.lowestY), LIST_X + 160, y + 6, 0x55FF55, false);
             graphics.m_280056_(this.f_96547_, "计划: " + plan.amount, LIST_X + 200, y + 6, 0x55FFFF, false);
 
-            // 手绘 +/- 按钮（不用 widget，避免重复添加）
+            // Hand-drawn +/- buttons (not widgets, to avoid adding them repeatedly)
             int minusX = LIST_X + 260;
             int plusX = LIST_X + 284;
             int btnY = y + 2;
@@ -97,7 +94,6 @@ public class BackpackInjectScreen extends Screen {
             graphics.m_280056_(this.f_96547_, "+", plusX + 7, btnY + 5, 0xFFFFFF, false);
         }
 
-        // 滚动条提示
         if (plans.size() > VISIBLE_ROWS) {
             graphics.m_280056_(this.f_96547_, "滚动: " + (scroll + 1) + "-" + end + " / " + plans.size(), LIST_X + LIST_WIDTH + 10, LIST_Y, 0xAAAAAA, false);
         }
@@ -107,7 +103,6 @@ public class BackpackInjectScreen extends Screen {
 
     @Override
     public boolean m_6375_(double mouseX, double mouseY, int button) {
-        // 手绘 +/- 按钮的点击检测
         int end = Math.min(plans.size(), scroll + VISIBLE_ROWS);
         for (int i = scroll; i < end; i++) {
             BackpackInjector.InjectPlan plan = plans.get(i);

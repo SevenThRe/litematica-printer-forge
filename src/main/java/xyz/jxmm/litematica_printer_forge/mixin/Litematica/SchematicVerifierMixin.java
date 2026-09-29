@@ -31,12 +31,14 @@ import com.google.common.collect.ArrayListMultimap;
 import fi.dy.masa.litematica.schematic.verifier.SchematicVerifier;
 import fi.dy.masa.litematica.util.ItemUtils;
 import fi.dy.masa.litematica.world.WorldSchematic;
+import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import java.util.HashSet;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.RandomizableContainerBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -49,6 +51,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import xyz.jxmm.litematica_printer_forge.LitematicaMixinMod;
+import xyz.jxmm.litematica_printer_forge.utils.BlockReplacer;
 
 @Mixin(value={SchematicVerifier.class})
 public class SchematicVerifierMixin {
@@ -67,6 +70,11 @@ public class SchematicVerifierMixin {
     @Final
     private Object2ObjectOpenHashMap<BlockPos, SchematicVerifier.BlockMismatch> blockMismatches;
     @Shadow
+    @Final
+    private Object2IntOpenHashMap<BlockState> correctStateCounts;
+    @Shadow
+    private int correctStatesCount;
+    @Shadow
     private ClientLevel worldClient;
 
     @Inject(method={"checkBlockStates"}, at={@At(value="HEAD")}, cancellable=true, remap=false)
@@ -75,6 +83,21 @@ public class SchematicVerifierMixin {
         BlockPos pos;
         WorldSchematic schematic;
         BlockEntity entity;
+        if (LitematicaMixinMod.CORAL_REPLACE_ENABLED.getBooleanValue()) {
+            Block schematicBlock = stateSchematic.m_60734_();
+            Block expected = BlockReplacer.resolveBlock(schematicBlock);
+            if (expected != schematicBlock && stateClient.m_60734_() == expected && replacedStateMatches(stateSchematic, stateClient)) {
+                // Replicate the vanilla "correct match" path accounting before cancelling
+                // so verifier progress and counters stay accurate
+                ItemUtils.setItemForBlock((Level)this.worldClient, new BlockPos(x, y, z), stateClient);
+                this.correctStateCounts.addTo(stateClient, 1);
+                if (!stateSchematic.m_60795_()) {
+                    ++this.correctStatesCount;
+                }
+                ci.cancel();
+                return;
+            }
+        }
         if (!LitematicaMixinMod.VERIFY_INVENTORY.getBooleanValue()) {
             return;
         }
@@ -88,6 +111,12 @@ public class SchematicVerifierMixin {
             ItemUtils.setItemForBlock((Level)this.worldSchematic, (BlockPos)pos, (BlockState)stateSchematic);
             ci.cancel();
         }
+    }
+
+    // All properties shared between the schematic state and the client state must match;
+    // properties absent on the client block (e.g. oxidation level) are ignored
+    private static boolean replacedStateMatches(BlockState schematic, BlockState client) {
+        return BlockReplacer.sharedPropertiesMatch(schematic, client);
     }
 }
 

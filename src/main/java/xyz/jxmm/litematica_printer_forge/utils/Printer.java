@@ -195,6 +195,7 @@ import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.BaseRailBlock;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.AmethystClusterBlock;
+import net.minecraft.world.level.block.BarrelBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.DirectionalBlock;
 import net.minecraft.world.level.block.Blocks;
@@ -347,9 +348,6 @@ public class Printer {
         return true;
     }
 
-    /**
-     * 方块替换：将原理图物品映射为替代方块物品（coralReplace 配置启用时）。
-     */
     private static ItemStack resolvePlacementStack(ItemStack original) {
         if (original.m_41619_()) {
             return original;
@@ -362,7 +360,7 @@ public class Printer {
     }
 
     /**
-     * 满足判定：真实方块与原理图方块一致，或为原理图方块的替换目标方块。
+     * Match rule: the real block equals the schematic block, or equals the schematic block's replacement target.
      */
     public static boolean blocksMatch(Block schematicBlock, Block clientBlock) {
         return schematicBlock == clientBlock || clientBlock == BlockReplacer.resolveBlock(schematicBlock);
@@ -703,12 +701,11 @@ public class Printer {
                     Printer.updateSignText(mc, (Level)world, pos);
                     BlockState stateSchematic = world.m_8055_(pos);
                     BlockState stateClient = mc.f_91073_.m_8055_(pos);
-                    // 提前拦截额外方块（必须在下面 PRINTER_BREAK_IGNORE_EXTRA 的 continue 之前）
+                    // Intercept extra blocks early (must run before the PRINTER_BREAK_IGNORE_EXTRA continue below)
                     if (!ClearArea && LitematicaMixinMod.PRINTER_BREAK_EXTRA_BLOCKS.getBooleanValue() && stateSchematic.m_60795_() && !stateClient.m_60795_() && !stateClient.m_247087_()) {
                         float hardness = stateClient.m_60800_((BlockGetter)mc.f_91073_, pos);
                         if (hardness >= 0.0f) {
                             if (hardness == 0.0f) {
-                                // 瞬时方块：直接破坏
                                 mc.f_91072_.m_105269_(pos, Direction.DOWN);
                                 ++interact;
                                 if (interact >= maxInteract) {
@@ -722,7 +719,7 @@ public class Printer {
                                 }
                                 continue;
                             }
-                            // 硬方块：仅在 Breaker 空闲时启动一次持续挖掘（不能每 tick startDestroyBlock，会重置进度导致永远挖不掉）
+                            // Hard block: start one continuous dig only while Breaker is idle (startDestroyBlock every tick resets progress so the block never breaks)
                             if (!breaker.isBreakingBlock()) {
                                 breaker.startBreakingBlock(pos, mc);
                                 ++interact;
@@ -939,20 +936,33 @@ public class Printer {
                         continue;
                     }
                     if (!FakeAccurateBlockPlacement.canPlace(stateSchematic, pos) || sBlock instanceof PistonHeadBlock || stateSchematic.m_60713_(Blocks.f_50110_)) continue;
-                    if (stateSchematic == stateClient) {
+                    if (stateSchematic == stateClient || BlockReplacer.clientMatchesReplacement(stateSchematic, stateClient)) {
                         causeMap.remove(pos.m_121878_());
                         continue;
                     }
                     if (cBlock != sBlock && !stateClient.m_247087_()) {
                         MessageHolder.sendUniqueMessage(mc.f_91074_, sBlock.m_7705_() + " at " + pos.m_123344_() + " is blocking placement of " + cBlock.m_7705_() + "!!");
+                        // With break mode on, a different-type wrong block occupying a schematic position is
+                        // broken here so the correct block can be placed on a later pass; otherwise falling
+                        // blocks above it wait forever for support that never appears
+                        if (breakBlocks && !ClearArea) {
+                            float blockerHardness = stateClient.m_60800_(mc.f_91073_, pos);
+                            if (blockerHardness >= 0.0f) {
+                                if (blockerHardness == 0.0f) {
+                                    mc.f_91072_.m_105269_(pos, Direction.DOWN);
+                                } else if (!Printer.breaker.isBreakingBlock()) {
+                                    Printer.breaker.startBreakingBlock(pos, mc);
+                                }
+                            }
+                        }
                         continue;
                     }
-                    // 蘑菇块（红/棕，HugeMushroomBlock）：6 个朝向面是布尔属性，由相邻"同种方块"决定，
-                    // 服务端 getStateForPlacement 不读取点击面/玩家朝向，假旋转无法指定其状态。
-                    // 同种邻居被放置时 updateShape 会自动把对应面翻为 false（外皮），因此放齐后状态自然收敛：
-                    //  - 类型相同仅 state 暂不一致：不能重复 useItemOn（会干扰收敛甚至误放），等待邻居放齐即可；
-                    //  - 唯一不可逆情形：世界存在多余同种邻居，使本该 true（菌孔）的面卡在 false（外皮）。
-                    //    updateShape 只翻 false 不翻回 true，需破坏本块，待多余方块清走后重放。
+                    // Huge mushroom blocks (red/brown): the 6 face flags are booleans driven by adjacent "same-type" blocks;
+                    // the server's getStateForPlacement ignores the clicked face/player orientation, so fake rotation cannot set their state.
+                    // When a same-type neighbor is placed, updateShape automatically flips the shared face to false (skin), so the state converges once neighbors are filled:
+                    //  - Same type, state temporarily mismatched: do not re-useItemOn (it disturbs convergence or misplaces); just wait for the neighbors.
+                    //  - Only irreversible case: an extra same-type neighbor in the world keeps a face that should be true (pore) stuck at false (skin).
+                    //    updateShape only flips faces to false, never back to true; the block must be broken and re-placed once the extra block is removed.
                     if (sBlock instanceof HugeMushroomBlock && cBlock == sBlock) {
                         if (Printer.mushroomBlockHasStaleSkin(stateSchematic, stateClient, (Level) world, pos)) {
                             float mushroomHardness = stateClient.m_60800_(mc.f_91073_, pos);
@@ -964,7 +974,7 @@ public class Printer {
                         }
                         continue;
                     }
-                    // m_247087_ 对草/蕨/雪片等 replaceable 方块也为 true，必须用 FluidState 二次过滤
+                    // m_247087_ is also true for replaceable blocks (grass/fern/snow layers), so filter again with FluidState
                     if (!stateSchematic.m_60795_() && stateClient.m_247087_() && !stateClient.m_60819_().m_76178_() && LitematicaMixinMod.PRINTER_CLEAR_FLUIDS_AUTOMATICALLY.getBooleanValue()) {
                         ItemStack[] candidates = new ItemStack[]{new ItemStack(Items.f_42594_), new ItemStack(Items.f_41901_), new ItemStack(Items.f_42116_)};
                         for (ItemStack candidate : candidates) {
@@ -1008,8 +1018,15 @@ public class Printer {
                             BlockPos Offsetpos = new BlockPos(x, y - 1, z);
                             BlockState OffsetstateSchematic = world.m_8055_(Offsetpos);
                             BlockState OffsetstateClient = mc.f_91073_.m_8055_(Offsetpos);
-                            if (OffsetstateClient.m_60795_() || breakBlocks && !OffsetstateClient.m_60734_().m_49954_().equals((Object)OffsetstateSchematic.m_60734_().m_49954_())) {
-                                Printer.recordCause(pos, stateSchematic.m_60734_().m_7705_() + " at " + pos.m_123344_() + " is Falling block", pos.m_7495_());
+                            // A replaced block (e.g. waxed copper) sitting below is valid support even though
+                            // its loot table differs from the schematic block it replaces
+                            boolean belowLootMatches = OffsetstateClient.m_60734_().m_49954_().equals((Object)OffsetstateSchematic.m_60734_().m_49954_())
+                                    || BlockReplacer.clientMatchesReplacement(OffsetstateSchematic, OffsetstateClient);
+                            if (OffsetstateClient.m_60795_() || breakBlocks && !belowLootMatches) {
+                                // Distinguish "waiting for the block below to be printed" from "the schematic itself
+                                // floats this falling block" (vanilla survival cannot place the latter at all)
+                                String fallExtra = OffsetstateSchematic.m_60795_() ? " (no schematic support below, needs manual placement)" : "";
+                                Printer.recordCause(pos, stateSchematic.m_60734_().m_7705_() + " at " + pos.m_123344_() + " is Falling block" + fallExtra, pos.m_7495_());
                                 MessageHolder.sendUniqueMessage(mc.f_91074_, Printer.getReason(pos.m_121878_()));
                                 continue;
                             }
@@ -1121,7 +1138,9 @@ public class Printer {
                                 MessageHolder.sendMessageUncheckedUnique(mc.f_91074_, String.valueOf(stateSchematic.m_60734_()) + " does not have facing data, please add this!");
                                 if (LitematicaMixinMod.PRINTER_SKIP_UNKNOWN_BLOCKSTATE.getBooleanValue()) continue;
                             }
-                            if ((!CanUseProtocol || !Printer.IsBlockSupportedCarpet(stateSchematic.m_60734_()).booleanValue()) && !LitematicaMixinMod.FAKE_ROTATION_BETA.getBooleanValue() && !Printer.canPlaceFace(facedata, stateSchematic, primaryFacing, horizontalFacing) || stateSchematic.m_60734_() instanceof DoorBlock && stateSchematic.m_61143_((Property)DoorBlock.f_52730_) == DoubleBlockHalf.UPPER || stateSchematic.m_60734_() instanceof BedBlock && stateSchematic.m_61143_((Property)BedBlock.f_49440_) == BedPart.HEAD) continue;
+                            // Barrel FACING comes from the clicked face (6-way), so the player-facing gate does not apply
+                            boolean isBarrel = stateSchematic.m_60734_() instanceof BarrelBlock;
+                            if (!isBarrel && ((!CanUseProtocol || !Printer.IsBlockSupportedCarpet(stateSchematic.m_60734_()).booleanValue()) && !LitematicaMixinMod.FAKE_ROTATION_BETA.getBooleanValue() && !Printer.canPlaceFace(facedata, stateSchematic, primaryFacing, horizontalFacing) || stateSchematic.m_60734_() instanceof DoorBlock && stateSchematic.m_61143_((Property)DoorBlock.f_52730_) == DoubleBlockHalf.UPPER || stateSchematic.m_60734_() instanceof BedBlock && stateSchematic.m_61143_((Property)BedBlock.f_49440_) == BedPart.HEAD)) continue;
                         }
                         if (stateSchematic.m_60734_() instanceof SignBlock && !(stateSchematic.m_60734_() instanceof WallSignBlock) && (Mth.m_14107_((double)((double)((180.0f + mc.f_91074_.m_146908_()) * 16.0f / 360.0f) + 0.5)) & 0xF) != (Integer)stateSchematic.m_61143_((Property)StandingSignBlock.f_56987_)) continue;
                         Direction sideOrig = Direction.NORTH;
@@ -1278,8 +1297,9 @@ public class Printer {
                         }
                         InteractionHand hand = InteractionHand.MAIN_HAND;
                         if (blockSchematic instanceof GlazedTerracottaBlock) {
-                            // 带釉陶瓦 FACING 来自玩家朝向：carpet 协议 hitVec 在 vanilla 服务端会因越界被驳回，
-                            // 改用 fake rotation（发假 yaw 包后 useItem，服务端按假朝向计算正确 FACING）
+                            // Glazed terracotta FACING comes from the player's orientation: the carpet-protocol hitVec is rejected on
+                            // vanilla servers as out of bounds, so use fake rotation instead (send a fake yaw packet then useItem;
+                            // the server computes the correct FACING from the fake orientation)
                             if (interact < maxInteract && FakeAccurateBlockPlacement.request(stateSchematic, pos)) {
                                 ++interact;
                             }
@@ -1356,7 +1376,11 @@ public class Printer {
                         }
                         return InteractionResult.SUCCESS;
                     }
-                    MessageHolder.sendUniqueMessage(mc.f_91074_, sBlock.m_7705_() + " can't be picked !!");
+                    // canPickBlock failed = survival mode and the required item is not in the player inventory;
+                    // name the resolved item so replacement mappings (schematic block != needed item) are obvious
+                    ItemStack missingStack = resolvePlacementStack(MaterialCache.getInstance().getRequiredBuildItemForState(stateSchematic, (Level) world, pos));
+                    MessageHolder.sendUniqueMessage(mc.f_91074_, sBlock.m_7705_() + " can't be picked !! (missing item: "
+                            + (missingStack.m_41619_() ? sBlock.m_5456_().toString() : missingStack.m_41786_().getString()) + ")");
                 }
             }
         }
@@ -2014,6 +2038,11 @@ public class Printer {
             } else {
                 clickPos = clickPos.m_82520_(0.5, 0.5, 0.5).m_82549_(Vec3.m_82528_((Vec3i)side.m_122436_()).m_82542_(0.5, 0.5, 0.5));
             }
+        } else if (block instanceof BarrelBlock) {
+            // Clicked-face block: aim slightly INSIDE the block near the schematic-facing plane;
+            // a boundary-corner hit vector can be rejected by server-side click validation.
+            Direction sdir = side == null ? Direction.UP : side;
+            clickPos = Vec3.m_82512_((Vec3i)pos).m_82549_(Vec3.m_82528_((Vec3i)sdir.m_122436_()).m_82542_(0.45, 0.45, 0.45));
         }
         double dx = clickPos.f_82479_;
         double dy = clickPos.f_82480_;
@@ -2131,10 +2160,11 @@ public class Printer {
     }
 
     /**
-     * 蘑菇块（红/棕）状态是否因"多余的同种邻居"而不可逆地错误：
-     * 某一面原理图为 true（菌孔外露），世界却为 false（外皮），且原理图中该方向邻居并非同种蘑菇块。
-     * 香草 updateShape 只会把面翻成 false，不会翻回 true，这种情况必须破坏重放才能修复。
-     * 属性顺序与 Direction.values() 对齐：NORTH/EAST/SOUTH/WEST/UP/DOWN。
+     * Whether a huge mushroom block's state is irreversibly wrong due to an "extra same-type neighbor":
+     * some face is true (exposed pore) in the schematic but false (skin) in the world, and the schematic
+     * neighbor in that direction is not the same mushroom block. Vanilla updateShape only flips faces to
+     * false and never back to true, so this can only be fixed by breaking and re-placing the block.
+     * Property order matches Direction.values(): NORTH/EAST/SOUTH/WEST/UP/DOWN.
      */
     static boolean mushroomBlockHasStaleSkin(BlockState schematic, BlockState client, Level schematicWorld, BlockPos pos) {
         BooleanProperty[] props = new BooleanProperty[] {
@@ -2243,9 +2273,13 @@ public class Printer {
             if (blockSchematic instanceof BaseRailBlock) {
                 return Printer.convertRailShapetoFace(stateSchematic);
             }
-            // 紫晶芽/簇：FACING 直接取点击面，原版缺失该分支导致朝向错误被服务端弹掉
+            // Amethyst clusters: FACING taken directly from the clicked face; without this branch the wrong orientation is rejected by the server
             if (blockSchematic instanceof AmethystClusterBlock) {
                 return (Direction)stateSchematic.m_61143_((Property)DirectionalBlock.f_52588_);
+            }
+            // Barrel: FACING likewise taken directly from the clicked face (6-way); clicked face = schematic orientation places correctly
+            if (blockSchematic instanceof BarrelBlock) {
+                return (Direction)stateSchematic.m_61143_((Property)BarrelBlock.f_49042_);
             }
         }
         return side;

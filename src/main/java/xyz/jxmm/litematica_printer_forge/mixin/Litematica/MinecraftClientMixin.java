@@ -38,8 +38,8 @@ public abstract class MinecraftClientMixin {
     public abstract ClientPacketListener m_91403_();
 
     /*
-     * PRINTER_HOTKEY 未注册进 MaFgLib 按键体系，isKeybindHeld() 永远 false。
-     * 这里改为直接轮询 GLFW 物理按键，并做边沿检测：按一下切换 printerOff 开关。
+     * PRINTER_HOTKEY is not registered in the MaFgLib keybind system, so isKeybindHeld() is always false.
+     * Instead, poll the GLFW physical keys directly with edge detection: one press toggles the printerOff switch.
      */
     private static boolean wasHotkeyPressed = false;
 
@@ -93,7 +93,6 @@ public abstract class MinecraftClientMixin {
         if (this.f_91074_ != null && this.f_91073_ != null) {
             boolean hasSchematic = SchematicWorldHandler.getSchematicWorld() != null;
 
-            // 切换开关
             if (isPrinterHotkeyJustPressed()) {
                 boolean newState = !LitematicaMixinMod.PRINTER_OFF.getBooleanValue();
                 LitematicaMixinMod.PRINTER_OFF.setBooleanValue(newState);

@@ -97,7 +97,7 @@ public class Breaker implements IClientTickHandler {
             this.breakingBlock = false;
             return;
         }
-        // 修复：移除 EASY_PLACE_ACTIVATION 键检查，打印机激活时始终执行挖掘
+        // Fix: removed the EASY_PLACE_ACTIVATION key check; always mine while the printer is active
         Direction side = Direction.values()[0];
         if (mc.f_91072_.m_105283_(this.pos, side)) {
             mc.f_91061_.m_107367_(this.pos, side);

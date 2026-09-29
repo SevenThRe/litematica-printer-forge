@@ -12,6 +12,7 @@
     "quasiEssentialClient.ItemPlacementContextMixin"
   ],
   "client": [
+    "Litematica.ChunkRendererSchematicVboMixin",
     "Litematica.GuiConfigsMixin",
     "Litematica.MinecraftClientMixin",
     "Litematica.WorldUtilsMixin",
