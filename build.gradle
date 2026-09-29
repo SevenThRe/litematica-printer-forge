@@ -27,14 +27,17 @@ dependencies {
     // 第三方前置 mod（MaFgLib 含 malilib，Forgematica 含 litematica 类）
     compileOnly fileTree(dir: 'libs', include: ['*.jar'])
 
-    // Sophisticated Backpacks 1.19.2（BII 背包注入用；1.19.2 分支从 libs/ 读取）
-    // 1.20.1 分支用根目录 ../../../ 下的 1.20.1 jar
+    // Sophisticated Backpacks API（BII 背包注入用）
+    compileOnly files(
+            "${rootDir}/../../../sophisticatedbackpacks-1.20.1-3.23.15.1236.jar",
+            "${rootDir}/../../../sophisticatedcore-1.20.1-1.2.55.975.jar"
+    )
 
     // 本地 Minecraft 库（forge、client srg、mixin、fastutil、guava 等）
     // 不用整目录 fileTree：本地 libraries 里混有多个 MC/Forge 版本的 jar，
     // javac 按顺序首个命中解析，顺序不确定会产生"符号不存在"错误。
-    // gradle/compile-classpath-1.19.2.txt 是 1.19.2 分支的精确清单（顺序敏感）。
-    def cpList = file('gradle/compile-classpath-1.19.2.txt').readLines('UTF-8')
+    // gradle/compile-classpath.txt 是实测可 0 错误编译的精确清单（顺序敏感）。
+    def cpList = file('gradle/compile-classpath.txt').readLines('UTF-8')
             .findAll { it.trim() && !it.startsWith('#') }
             .collect { file(it.trim()) }
             .findAll { it.exists() }

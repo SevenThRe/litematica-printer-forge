@@ -1,5 +1,5 @@
 modLoader = "javafml"
-loaderVersion = "[43,)"
+loaderVersion = "[47,)"
 license = "MIT"
 
 [[mods]]
@@ -18,27 +18,27 @@ config = "litematica_printer_forge.mixins.json"
 [[dependencies."litematica_printer_forge"]]
 modId = "forge"
 mandatory = true
-versionRange = "[43,)"
+versionRange = "[47,)"
 ordering = "NONE"
 side = "BOTH"
 
 [[dependencies."litematica_printer_forge"]]
 modId = "minecraft"
 mandatory = true
-versionRange = "[1.19.2,1.20)"
+versionRange = "[1.20,1.21)"
 ordering = "NONE"
 side = "BOTH"
 
 [[dependencies."litematica_printer_forge"]]
 modId = "mafglib"
 mandatory = true
-versionRange = "[0.1.14-mc1.19.2,)"
+versionRange = "[0.1.14-mc1.20.1,)"
 ordering = "NONE"
 side = "BOTH"
 
 [[dependencies."litematica_printer_forge"]]
 modId = "forgematica"
 mandatory = true
-versionRange = "[0.1.10-mc1.19.2,)"
+versionRange = "[0.1.13-mc1.20.1,)"
 ordering = "NONE"
 side = "BOTH"
