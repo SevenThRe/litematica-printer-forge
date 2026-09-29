@@ -1,15 +1,31 @@
-// Litematica Printer Forge — 纯 Gradle(java) 构建
+// Litematica Printer Forge — 纯 Gradle(java) 构建（双版本）
 //
 // 为什么不用 ForgeGradle：
-//   本仓库源码直接使用 1.20.1 生产环境 SRG 名称（m_xxx/f_xxx），编译期依赖
+//   本仓库源码直接使用生产环境 SRG 名称（m_xxx/f_xxx），编译期依赖
 //   直接取自本地 .minecraft/libraries（client srg jar + forge jars）与 libs/
 //   目录下的 MaFgLib / Forgematica。不需要 reobf / 运行时映射，产出即生产 JAR。
 //
-// 构建：gradlew build  →  build/libs/litematica_printer_forge-<version>.jar
+// 双版本构建（-Ptarget 选择，默认 1.20.1）：
+//   gradlew build -Ptarget=1.20.1  →  build/libs/litematica_printer_forge-<v>-mc1.20.1.jar
+//   gradlew build -Ptarget=1.19.2  →  build/libs/litematica_printer_forge-<v>-mc1.19.2.jar
+//
+// 版本差异处理：
+//   - A 类（同签名形状的方法名差异，3 组）在 1.19.2 构建时对 src/main/java
+//     做纯令牌替换生成到 build/gen-src-1.19.2：
+//       m_247087_()  -> m_60767_().m_76336_()   (canBeReplaced)
+//       m_276867_    -> m_46753_                (getSignal(pos))
+//       m_276987_    -> m_46616_                (getSignal(pos,dir))
+//   - B 类（版本原生差异：4 个 GUI Screen + ClientPlayerEntityMixin）不放
+//     src/main，按版本放 src/v1201/java 与 src/v1192/java。
+//   - META-INF/mods.toml 由 gradle/mods-<target>.toml 模板提供。
 
 plugins {
     id 'java'
 }
+
+def target = (project.hasProperty('target') ? project.property('target').toString() : '1.20.1')
+def is1192 = (target == '1.19.2')
+def mcVer = is1192 ? '1.19.2' : '1.20.1'
 
 group = mod_group_id
 version = mod_version
@@ -23,21 +39,74 @@ repositories {
     mavenCentral()
 }
 
+// ---- 1.19.2 令牌替换源码生成 ----
+tasks.register('genSources1192', Copy) {
+    onlyIf { is1192 }
+    from('src/main/java')
+    into("$buildDir/gen-src-1.19.2")
+    filter { line ->
+        def out = line.replace('.m_247087_()', '.m_60767_().m_76336_()')
+            .replace('m_276867_', 'm_46753_')
+            .replace('m_276987_', 'm_46616_')
+            // 渲染: 1.20.1 未混淆 RenderSystem -> 1.19.2 SRG（逐个以 NFWC 实机 jar + client srg jar 字节码核实）
+            .replace('RenderSystem.disableDepthTest()', 'RenderSystem.m_69465_()')
+            .replace('RenderSystem.enableBlend()', 'RenderSystem.m_69478_()')
+            .replace('RenderSystem.defaultBlendFunc()', 'RenderSystem.m_69453_()')
+            .replace('RenderSystem.disableCull()', 'RenderSystem.m_69464_()')
+            .replace('RenderSystem.enableCull()', 'RenderSystem.m_69481_()')
+            .replace('RenderSystem.enableDepthTest()', 'RenderSystem.m_69482_()')
+            .replace('RenderSystem.disableBlend()', 'RenderSystem.m_69461_()')
+            .replace('RenderSystem.setShader(', 'RenderSystem.m_157427_(')
+            .replace('RenderSystem.lineWidth(', 'RenderSystem.m_157445_(')
+            // 顶点/矩阵: 1.20.1 SRG -> 1.19.2 SRG（Matrix4f 1.19.2 属 com.mojang.math，非 joml）
+            .replace('m_252922_()', 'm_85861_()')
+            .replace('m_252986_(', 'm_85982_(')
+            .replace('org.joml.Matrix4f', 'com.mojang.math.Matrix4f')
+            // 告示牌: 1.20.1 getText().getMessage(row,false) -> 1.19.2 getText(row,false)
+            .replace('m_277142_().m_277138_(', 'm_155706_(')
+            // 告示牌更新包: 1.20.1 带 frontText 布尔参，1.19.2 为 5 参
+            .replace('(signBlockEntity.m_58899_(), true, ', '(signBlockEntity.m_58899_(), ')
+        // ItemStack: 1.20.1 静态 isSameItem(a,b) -> 1.19.2 实例 a.is(b)（NFWC jar 为 invokevirtual 实证）
+        if (out.contains('ItemStack.m_41656_(')) {
+            out = out.replaceAll(/ItemStack\.m_41656_\((.+?), ([^()]+)\)/) { _, x, y -> "(${x}).m_41656_(${y})" }
+        }
+        out
+    }
+    outputs.upToDateWhen { false }
+}
+
+sourceSets {
+    main {
+        java {
+            if (is1192) {
+                srcDirs = ["$buildDir/gen-src-1.19.2", 'src/v1192/java']
+            } else {
+                srcDirs = ['src/main/java', 'src/v1201/java']
+            }
+        }
+    }
+}
+
+if (is1192) {
+    tasks.named('compileJava') { dependsOn 'genSources1192' }
+}
+
 dependencies {
     // 第三方前置 mod（MaFgLib 含 malilib，Forgematica 含 litematica 类）
-    compileOnly fileTree(dir: 'libs', include: ['*.jar'])
-
-    // Sophisticated Backpacks API（BII 背包注入用）
-    compileOnly files(
-            "${rootDir}/../../../sophisticatedbackpacks-1.20.1-3.23.15.1236.jar",
-            "${rootDir}/../../../sophisticatedcore-1.20.1-1.2.55.975.jar"
-    )
+    // 按目标版本精确选择，避免多版本 jar 混入编译类路径产生符号冲突。
+    compileOnly fileTree(dir: 'libs', include: [
+            "Forgematica-*-mc${mcVer}.jar",
+            "MaFgLib-*-mc${mcVer}.jar",
+            "sophisticatedbackpacks-${mcVer}-*.jar",
+            "sophisticatedcore-${mcVer}-*.jar"
+    ])
 
     // 本地 Minecraft 库（forge、client srg、mixin、fastutil、guava 等）
     // 不用整目录 fileTree：本地 libraries 里混有多个 MC/Forge 版本的 jar，
     // javac 按顺序首个命中解析，顺序不确定会产生"符号不存在"错误。
-    // gradle/compile-classpath.txt 是实测可 0 错误编译的精确清单（顺序敏感）。
-    def cpList = file('gradle/compile-classpath.txt').readLines('UTF-8')
+    // gradle/compile-classpath*.txt 是实测可 0 错误编译的精确清单（顺序敏感）。
+    def cpFile = is1192 ? 'gradle/compile-classpath-1.19.2.txt' : 'gradle/compile-classpath.txt'
+    def cpList = file(cpFile).readLines('UTF-8')
             .findAll { it.trim() && !it.startsWith('#') }
             .collect { file(it.trim()) }
             .findAll { it.exists() }
@@ -55,11 +124,20 @@ processResources {
     filesMatching('META-INF/mods.toml') {
         expand 'version': project.version
     }
+    if (is1192) {
+        // 用 1.19.2 模板覆盖产物内的 mods.toml（版本区间 forge[43,) / mc[1.19.2,1.20)）
+        doLast {
+            def tpl = file('gradle/mods-1.19.2.toml').text.replace('${version}', project.version)
+            def out = new File(sourceSets.main.output.resourcesDir, 'META-INF/mods.toml')
+            out.parentFile.mkdirs()
+            out.text = tpl
+        }
+    }
 }
 
 jar {
     archiveBaseName.set(mod_archives_name)
-    archiveVersion.set(project.version)
+    archiveVersion.set("${project.version}-mc${target}")
     manifest {
         attributes(
                 'Specification-Title' : 'litematica_printer_forge',
