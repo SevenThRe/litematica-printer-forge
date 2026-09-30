@@ -4,6 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import xyz.jxmm.litematica_printer_forge.utils.BackpackInjector;
+import xyz.jxmm.litematica_printer_forge.utils.InjectPlan;
 import xyz.jxmm.litematica_printer_forge.utils.MessageHolder;
 
 import java.util.ArrayList;
@@ -46,9 +47,9 @@ public final class BiiInjectSupplier implements MaterialBroker.MaterialSupplier 
             finished = true;
             return;
         }
-        List<BackpackInjector.InjectPlan> plans = new ArrayList<>();
+        List<InjectPlan> plans = new ArrayList<>();
         for (Map.Entry<Item, Integer> e : shortages.entrySet()) {
-            plans.add(new BackpackInjector.InjectPlan(new ItemStack(e.getKey(), 1), e.getValue()));
+            plans.add(new InjectPlan(new ItemStack(e.getKey(), 1), e.getValue()));
         }
         BackpackInjector.applySort(plans, BackpackInjector.lastSortMode);
         started = true;

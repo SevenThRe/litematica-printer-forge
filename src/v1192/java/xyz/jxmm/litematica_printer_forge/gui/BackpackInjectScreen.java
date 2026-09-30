@@ -8,11 +8,12 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import xyz.jxmm.litematica_printer_forge.utils.BackpackInjector;
+import xyz.jxmm.litematica_printer_forge.utils.InjectPlan;
 
 import java.util.List;
 
 public class BackpackInjectScreen extends Screen {
-    private final List<BackpackInjector.InjectPlan> plans;
+    private final List<InjectPlan> plans;
     private int sortMode = BackpackInjector.lastSortMode;
     private int scroll = 0;
     private static final int ROW_HEIGHT = 24;
@@ -26,11 +27,11 @@ public class BackpackInjectScreen extends Screen {
     private Button confirmBtn;
     private Button cancelBtn;
 
-    public BackpackInjectScreen(List<BackpackInjector.InjectPlan> plans) {
+    public BackpackInjectScreen(List<InjectPlan> plans) {
         this(plans, null);
     }
 
-    public BackpackInjectScreen(List<BackpackInjector.InjectPlan> plans, String schematicName) {
+    public BackpackInjectScreen(List<InjectPlan> plans, String schematicName) {
         super(Component.m_237115_(schematicName == null ? "背包材料注入" : "背包材料注入 - " + schematicName));
         this.plans = plans;
         this.schematicName = schematicName;
@@ -68,7 +69,7 @@ public class BackpackInjectScreen extends Screen {
 
         int end = Math.min(plans.size(), scroll + VISIBLE_ROWS);
         for (int i = scroll; i < end; i++) {
-            BackpackInjector.InjectPlan plan = plans.get(i);
+            InjectPlan plan = plans.get(i);
             ItemStack stack = plan.stack;
             int y = LIST_Y + (i - scroll) * ROW_HEIGHT;
 
@@ -105,7 +106,7 @@ public class BackpackInjectScreen extends Screen {
     public boolean m_6375_(double mouseX, double mouseY, int button) {
         int end = Math.min(plans.size(), scroll + VISIBLE_ROWS);
         for (int i = scroll; i < end; i++) {
-            BackpackInjector.InjectPlan plan = plans.get(i);
+            InjectPlan plan = plans.get(i);
             int y = LIST_Y + (i - scroll) * ROW_HEIGHT;
             int btnY = y + 2;
             int minusX = LIST_X + 260;

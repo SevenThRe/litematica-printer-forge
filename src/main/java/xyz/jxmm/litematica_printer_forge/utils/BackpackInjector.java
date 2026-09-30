@@ -58,21 +58,9 @@ public class BackpackInjector {
         }
     }
 
-    public static class InjectPlan {
-        public final ItemStack stack;
-        public int amount;
-        /** World Y of this material's lowest missing position (used for Y-layer sorted injection) */
-        public int lowestY = Integer.MAX_VALUE;
-        public InjectPlan(ItemStack stack, int amount) {
-            this.stack = stack;
-            this.amount = amount;
-        }
-        public InjectPlan(ItemStack stack, int amount, int lowestY) {
-            this.stack = stack;
-            this.amount = amount;
-            this.lowestY = lowestY;
-        }
-    }
+    // NOTE: InjectPlan and InjectResultListener were moved to top-level classes in the
+    // same package (InjectPlan.java / InjectResultListener.java) so Forge's
+    // ModuleClassLoader resolves them reliably. They are referenced unqualified below.
 
     private static void resolve(Minecraft mc) {
         if (resolved) return;
@@ -266,10 +254,6 @@ public class BackpackInjector {
      * back through the listener once the server syncs (or empty maps if the menu
      * closed before verification).
      */
-    public interface InjectResultListener {
-        void onResult(Map<Item, Integer> gotInv, Map<Item, Integer> gotStored);
-    }
-
     private static InjectResultListener pendingListener = null;
 
     public static void ensureMaterials(List<InjectPlan> plans, Minecraft mc, InjectResultListener listener) {
