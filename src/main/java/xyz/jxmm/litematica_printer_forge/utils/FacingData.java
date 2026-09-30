@@ -60,6 +60,7 @@ import net.minecraft.world.level.block.LoomBlock;
 import net.minecraft.world.level.block.ObserverBlock;
 import net.minecraft.world.level.block.PumpkinBlock;
 import net.minecraft.world.level.block.RepeaterBlock;
+import net.minecraft.world.level.block.RodBlock;
 import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.StonecutterBlock;
 import net.minecraft.world.level.block.TrapDoorBlock;
@@ -106,6 +107,9 @@ public class FacingData {
         FacingData.addFD(EndPortalFrameBlock.class, new FacingData(1, true));
         // Wall skulls (including player heads) take their facing from the clicked face, same as pistons
         FacingData.addFD(WallSkullBlock.class, new FacingData(0, true));
+        // End rod / lightning rod: FACING comes straight from the clicked face (6-way),
+        // so the player-facing gate never applies — see the RodBlock bypass in Printer
+        FacingData.addFD(RodBlock.class, new FacingData(0, false));
         FacingData.addFD(LeverBlock.class, new FacingData(2, false));
         FacingData.addFD(GrindstoneBlock.class, new FacingData(2, true));
         FacingData.addFD(AnvilBlock.class, new FacingData(3, true));

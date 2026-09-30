@@ -239,6 +239,7 @@ import net.minecraft.world.level.block.RedstoneLampBlock;
 import net.minecraft.world.level.block.RedstoneTorchBlock;
 import net.minecraft.world.level.block.RedstoneWallTorchBlock;
 import net.minecraft.world.level.block.RepeaterBlock;
+import net.minecraft.world.level.block.RodBlock;
 import net.minecraft.world.level.block.RotatedPillarBlock;
 import net.minecraft.world.level.block.SandBlock;
 import net.minecraft.world.level.block.ScaffoldingBlock;
@@ -1158,8 +1159,8 @@ public class Printer {
                                 MessageHolder.sendMessageUncheckedUnique(mc.f_91074_, String.valueOf(stateSchematic.m_60734_()) + " does not have facing data, please add this!");
                                 if (LitematicaMixinMod.PRINTER_SKIP_UNKNOWN_BLOCKSTATE.getBooleanValue()) continue;
                             }
-                            // Barrel FACING comes from the clicked face (6-way), so the player-facing gate does not apply
-                            boolean isBarrel = stateSchematic.m_60734_() instanceof BarrelBlock;
+                            // Rod blocks (end rod / lightning rod) FACING comes from the clicked face (6-way), so the player-facing gate does not apply
+                            boolean isBarrel = stateSchematic.m_60734_() instanceof BarrelBlock || stateSchematic.m_60734_() instanceof RodBlock;
                             if (!isBarrel && ((!CanUseProtocol || !Printer.IsBlockSupportedCarpet(stateSchematic.m_60734_()).booleanValue()) && !LitematicaMixinMod.FAKE_ROTATION_BETA.getBooleanValue() && !Printer.canPlaceFace(facedata, stateSchematic, primaryFacing, horizontalFacing) || stateSchematic.m_60734_() instanceof DoorBlock && stateSchematic.m_61143_((Property)DoorBlock.f_52730_) == DoubleBlockHalf.UPPER || stateSchematic.m_60734_() instanceof BedBlock && stateSchematic.m_61143_((Property)BedBlock.f_49440_) == BedPart.HEAD)) continue;
                         }
                         if (stateSchematic.m_60734_() instanceof SignBlock && !(stateSchematic.m_60734_() instanceof WallSignBlock) && (Mth.m_14107_((double)((double)((180.0f + mc.f_91074_.m_146908_()) * 16.0f / 360.0f) + 0.5)) & 0xF) != (Integer)stateSchematic.m_61143_((Property)StandingSignBlock.f_56987_)) continue;
@@ -1199,6 +1200,10 @@ public class Printer {
                         if (blockSchematic instanceof TrapDoorBlock && !CanUseProtocol && !LitematicaMixinMod.FAKE_ROTATION_BETA.getBooleanValue()) {
                             Printer.placeTrapDoor(stateSchematic, mc, pos);
                             ++interact;
+                            continue;
+                        }
+                        if (blockSchematic instanceof EndRodBlock) {
+                            if (Printer.placeRod(stateSchematic, mc, pos, isCreative)) ++interact;
                             continue;
                         }
                         int miliseconds = LitematicaMixinMod.EASY_PLACE_CACHE_TIME.getIntegerValue();
@@ -1824,6 +1829,31 @@ public class Printer {
                 client.f_91072_.m_233732_(client.f_91074_, InteractionHand.MAIN_HAND, new BlockHitResult(hitVec, side, clickPos, false));
             }
         }
+    }
+
+    // Rod blocks (end rod / lightning rod) take FACING straight from the clicked face, so the
+    // required orientation is always achievable by clicking the schematic facing's support face —
+    // no player rotation (real or fake) is involved. Clicking the air target itself works too:
+    // BlockPlaceContext.replaceClicked then places at the clicked position (see vanilla
+    // BlockPlaceContext.getClickedPos).
+    private static boolean placeRod(BlockState state, Minecraft client, BlockPos pos, boolean isCreative) {
+        Direction facing = (Direction)state.m_61143_((Property)EndRodBlock.f_52588_);
+        BlockPos support = pos.m_121955_(facing.m_122424_().m_122436_());
+        BlockHitResult hit;
+        if (client.f_91073_.m_8055_(support).m_247087_()) {
+            // support is air: click the target position itself (replaceClicked -> places at pos)
+            hit = new BlockHitResult(Vec3.m_82512_((Vec3i)pos), facing, pos, false);
+        } else {
+            // click the solid support block on the face pointing toward the rod position
+            Vec3 hitVec = Vec3.m_82512_((Vec3i)support).m_82549_(Vec3.m_82528_((Vec3i)facing.m_122436_()).m_82542_(0.5, 0.5, 0.5));
+            hit = new BlockHitResult(hitVec, facing, support, false);
+        }
+        if (!Printer.doSchematicWorldPickBlock(client, state, pos)) return false;
+        Printer.cacheEasyPlacePosition(pos, false);
+        client.f_91072_.m_233732_(client.f_91074_, InteractionHand.MAIN_HAND, hit);
+        InventoryUtils.decrementCount(isCreative);
+        Printer.sleepWhenRequired(client);
+        return true;
     }
 
     private static boolean canAttachGrindstone(BlockState state, Minecraft client, BlockPos pos) {
