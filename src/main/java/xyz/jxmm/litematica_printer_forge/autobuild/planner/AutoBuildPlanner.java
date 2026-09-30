@@ -367,6 +367,11 @@ public final class AutoBuildPlanner {
     }
 
     private static Item itemFor(BlockState schemState) {
+        // Potted plants have no item form of their own (asItem() == AIR); represent them in the
+        // missing list by the empty flower pot. getMaterialNeeds() expands them into pot + flower.
+        if (schemState.m_60734_() instanceof net.minecraft.world.level.block.FlowerPotBlock) {
+            return Items.f_42618_;
+        }
         Item item = schemState.m_60734_().m_5456_();
         if (item == Items.f_41852_) {
             return null;
@@ -448,6 +453,17 @@ public final class AutoBuildPlanner {
     public static Map<Item, Integer> getMaterialNeeds(int layerY, Set<Long> skipSet) {
         Map<Item, Integer> out = new HashMap<>();
         for (MissingEntry e : getLayerEntries(layerY, skipSet)) {
+            // Potted plants (itemFor() maps them to the empty pot) consume BOTH the pot and
+            // the plant - count each so the restock/injection chain stocks both materials.
+            if (e.block instanceof net.minecraft.world.level.block.FlowerPotBlock) {
+                out.merge(Items.f_42618_, 1, Integer::sum);
+                Item flower = xyz.jxmm.litematica_printer_forge.utils.BackpackInjector.pottedFlowerItem(
+                        e.block.m_49966_());
+                if (flower != null) {
+                    out.merge(flower, 1, Integer::sum);
+                }
+                continue;
+            }
             out.merge(e.item, 1, Integer::sum);
         }
         return out;

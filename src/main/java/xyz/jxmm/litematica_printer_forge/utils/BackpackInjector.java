@@ -13,6 +13,8 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.FlowerPotBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import org.lwjgl.glfw.GLFW;
 import xyz.jxmm.litematica_printer_forge.LitematicaMixinMod;
@@ -201,6 +203,19 @@ public class BackpackInjector {
                             missing = true;
                         }
                         if (!missing) continue;
+                        // Potted plants have no item form of their own (asItem() == AIR), so the generic
+                        // path below would drop them silently. A potted plant needs BOTH the empty flower
+                        // pot and the plant it holds - count each separately.
+                        if (schemState.m_60734_() instanceof FlowerPotBlock) {
+                            Item flower = pottedFlowerItem(schemState);
+                            missingMap.merge(Items.f_42618_, 1, Integer::sum);
+                            minYMap.merge(Items.f_42618_, worldPos.m_123342_(), Math::min);
+                            if (flower != null) {
+                                missingMap.merge(flower, 1, Integer::sum);
+                                minYMap.merge(flower, worldPos.m_123342_(), Math::min);
+                            }
+                            continue;
+                        }
                         Item item = schemState.m_60734_().m_5456_();
                         if (item == Items.f_41852_) continue;
                         item = BlockReplacer.resolve(item);
@@ -269,6 +284,22 @@ public class BackpackInjector {
     /** Drops a pending result listener without touching the injection flow. */
     public static void clearProgrammaticState() {
         pendingListener = null;
+    }
+
+    /**
+     * The plant held by a potted plant block, as a storable item; null for an empty pot
+     * or when the content block has no item form.
+     */
+    public static Item pottedFlowerItem(BlockState state) {
+        if (!(state.m_60734_() instanceof FlowerPotBlock)) {
+            return null;
+        }
+        Block content = ((FlowerPotBlock) state.m_60734_()).m_53560_();
+        if (content == null) {
+            return null;
+        }
+        Item item = content.m_5456_();
+        return item == Items.f_41852_ ? null : item;
     }
 
     public static void inject(List<InjectPlan> plans, int sortMode, Minecraft mc) {
