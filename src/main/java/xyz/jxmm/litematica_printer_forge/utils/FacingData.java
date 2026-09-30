@@ -63,6 +63,7 @@ import net.minecraft.world.level.block.RepeaterBlock;
 import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.StonecutterBlock;
 import net.minecraft.world.level.block.TrapDoorBlock;
+import net.minecraft.world.level.block.WallSkullBlock;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -103,6 +104,8 @@ public class FacingData {
         FacingData.addFD(CarvedPumpkinBlock.class, new FacingData(1, true));
         FacingData.addFD(PumpkinBlock.class, new FacingData(1, true));
         FacingData.addFD(EndPortalFrameBlock.class, new FacingData(1, true));
+        // Wall skulls (including player heads) take their facing from the clicked face, same as pistons
+        FacingData.addFD(WallSkullBlock.class, new FacingData(0, true));
         FacingData.addFD(LeverBlock.class, new FacingData(2, false));
         FacingData.addFD(GrindstoneBlock.class, new FacingData(2, true));
         FacingData.addFD(AnvilBlock.class, new FacingData(3, true));

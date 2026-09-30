@@ -73,8 +73,10 @@ import net.minecraft.world.level.block.FaceAttachedHorizontalDirectionalBlock;
 import net.minecraft.world.level.block.GrindstoneBlock;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.RedstoneWallTorchBlock;
+import net.minecraft.world.level.block.SkullBlock;
 import net.minecraft.world.level.block.TorchBlock;
 import net.minecraft.world.level.block.TrapDoorBlock;
+import net.minecraft.world.level.block.WallSkullBlock;
 import net.minecraft.world.level.block.WallTorchBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.AttachFace;
@@ -262,6 +264,25 @@ public class FakeAccurateBlockPlacement {
         return false;
     }
 
+    /**
+     * Minecraft yaw convention: 0 = SOUTH, 90 = WEST, 180 = NORTH, 270 = EAST.
+     * Only used to record a direction alongside a raw yaw (skulls need the exact yaw, the
+     * 16 ROTATION steps cannot be expressed with the 6 directions).
+     */
+    private static Direction yawToDirection(float yaw) {
+        float normalized = ((yaw % 360.0f) + 360.0f) % 360.0f;
+        if (normalized >= 45.0f && normalized < 135.0f) {
+            return Direction.WEST;
+        }
+        if (normalized >= 135.0f && normalized < 225.0f) {
+            return Direction.NORTH;
+        }
+        if (normalized >= 225.0f && normalized < 315.0f) {
+            return Direction.EAST;
+        }
+        return Direction.SOUTH;
+    }
+
     public static Direction getPlayerFacing() {
         if (fakeYaw == -87.0f) {
             return Direction.EAST;
@@ -315,6 +336,30 @@ public class FakeAccurateBlockPlacement {
         }
         if (blockState.m_60713_(Blocks.f_50623_)) {
             return FakeAccurateBlockPlacement.requestGrindStone(blockState, blockPos);
+        }
+        // Standing skulls keep their orientation in ROTATION (0-15), which the game derives from the
+        // player's yaw at placement time. They carry no facing property, so without an explicit fake
+        // rotation the skull simply copies wherever the player happens to be looking.
+        if (blockState.m_60734_() instanceof SkullBlock && !(blockState.m_60734_() instanceof WallSkullBlock) && blockState.m_61138_((Property)SkullBlock.f_56314_)) {
+            float skullYaw = (float)((Integer)blockState.m_61143_((Property)SkullBlock.f_56314_)).intValue() * 22.5f;
+            float skullPitch = 12.0f;
+            Direction skullDir = FakeAccurateBlockPlacement.yawToDirection(skullYaw);
+            if (requestedTicks <= 0 && fakeYaw == skullYaw && fakePitch == skullPitch) {
+                FakeAccurateBlockPlacement.placeBlock(blockPos, blockState);
+                return true;
+            }
+            if (FakeAccurateBlockPlacement.isHandling()) {
+                MessageHolder.sendOrderMessage("Cannot handle " + String.valueOf(blockState) + " at " + blockPos.m_123344_());
+                return false;
+            }
+            if (waitingQueue.isEmpty()) {
+                FakeAccurateBlockPlacement.request(skullYaw, skullPitch, skullDir, LitematicaMixinMod.FAKE_ROTATION_TICKS.getIntegerValue(), false);
+                FakeAccurateBlockPlacement.pickFirst(blockState, blockPos);
+                waitingQueue.offer(new PosWithBlock(blockPos, blockState));
+                return false;
+            }
+            FakeAccurateBlockPlacement.placeFromQueue();
+            return false;
         }
         if (blockState.m_60713_(Blocks.f_50332_) || blockState.m_204336_(BlockTags.f_13083_) || blockState.m_60713_(Blocks.f_152587_) || blockState.m_60713_(Blocks.f_50489_)) {
             FakeAccurateBlockPlacement.placeBlock(blockPos, blockState);
@@ -429,10 +474,13 @@ public class FakeAccurateBlockPlacement {
         }
         if (FakeAccurateBlockPlacement.canHandleOther(MaterialCache.getInstance().getRequiredBuildItemForState(state, (Level)SchematicWorldHandler.getSchematicWorld(), pos).m_41720_())) {
             if (state.m_60713_(Blocks.f_50623_)) {
-                if (stateGrindStone != null) {
-                    return stateGrindStone.m_61143_((Property)GrindstoneBlock.f_53179_) == state.m_61143_((Property)GrindstoneBlock.f_53179_) && stateGrindStone.m_61143_((Property)GrindstoneBlock.f_54117_) == state.m_61143_((Property)GrindstoneBlock.f_54117_);
+                // stateGrindStone is only assigned inside requestGrindStone(), and requestGrindStone()
+                // is only reached once this check has already passed - returning false here deadlocks,
+                // so the grindstone never gets placed at all. Allow the first pass.
+                if (stateGrindStone == null) {
+                    return true;
                 }
-                return false;
+                return stateGrindStone.m_61143_((Property)GrindstoneBlock.f_53179_) == state.m_61143_((Property)GrindstoneBlock.f_53179_) && stateGrindStone.m_61143_((Property)GrindstoneBlock.f_54117_) == state.m_61143_((Property)GrindstoneBlock.f_54117_);
             }
             if (handlingState != null && (handlingState.m_60734_() instanceof DirectionalBlock || handlingState.m_60734_() instanceof HorizontalDirectionalBlock && !(handlingState.m_60734_() instanceof FaceAttachedHorizontalDirectionalBlock))) {
                 Direction other;
