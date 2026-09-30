@@ -2048,14 +2048,14 @@ public class Printer {
         double dy = clickPos.f_82480_;
         double dz = clickPos.f_82481_;
         if (block instanceof StairBlock) {
-            // 楼梯：TOP 需 clickY-posY<=0.5，BOTTOM 需 >0.5
-            dy = state.m_61143_((Property)StairBlock.f_56842_) == Half.TOP ? (dy -= 0.1) : (dy += 0.1);
+            // 楼梯(side=水平面时)：TOP 需 clickY-posY>0.5，BOTTOM 需 <=0.5
+            dy = state.m_61143_((Property)StairBlock.f_56842_) == Half.TOP ? (dy += 0.9) : (dy += 0.1);
         } else if (block instanceof SlabBlock && state.m_61143_((Property)SlabBlock.f_56353_) != SlabType.DOUBLE) {
-            // 半砖：TOP 需 clickY-posY>=0.5，BOTTOM 需 <0.5
-            dy = state.m_61143_((Property)SlabBlock.f_56353_) == SlabType.TOP ? (dy += 0.4) : (dy -= 0.4);
+            // 半砖(side=水平面时)：TOP 需 clickY-posY>=0.5，BOTTOM 需 <0.5
+            dy = state.m_61143_((Property)SlabBlock.f_56353_) == SlabType.TOP ? (dy += 0.9) : (dy += 0.1);
         } else if (block instanceof TrapDoorBlock) {
-            // 活板门：TOP 需 clickY-posY>0.5，BOTTOM 需 <=0.5
-            dy = state.m_61143_((Property)TrapDoorBlock.f_57515_) == Half.TOP ? (dy += 0.4) : (dy -= 0.4);
+            // 活板门：placeBlock 内会按 half 把 side 改成 UP/DOWN，这里保留相对偏移作兼容
+            dy = state.m_61143_((Property)TrapDoorBlock.f_57515_) == Half.TOP ? (dy += 0.9) : (dy += 0.1);
         }
         return new Vec3(dx, dy, dz);
     }
