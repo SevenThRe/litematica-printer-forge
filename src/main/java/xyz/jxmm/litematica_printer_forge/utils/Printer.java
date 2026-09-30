@@ -553,10 +553,10 @@ public class Printer {
             return InteractionResult.SUCCESS;
         }
         if (LitematicaMixinMod.INVENTORY_OPERATIONS.getBooleanValue()) {
-            System.out.println("[PRINTER-DEBUG] Early return: inventory operations pending");
-            ItemInputs.execute(mc);
-            mc.f_91074_.m_5661_(Component.m_130674_((String)"Handling inventory operation!"), true);
-            return InteractionResult.PASS;
+            if (ItemInputs.execute(mc)) {
+                mc.f_91074_.m_5661_(Component.m_130674_((String)"Handling inventory operation!"), true);
+                return InteractionResult.PASS;
+            }
         }
         ItemInputs.clear();
         Date date = new Date();
@@ -2048,11 +2048,14 @@ public class Printer {
         double dy = clickPos.f_82480_;
         double dz = clickPos.f_82481_;
         if (block instanceof StairBlock) {
-            dy = state.m_61143_((Property)StairBlock.f_56842_) == Half.TOP ? (dy += 0.9) : (dy += 0.0);
+            // 楼梯：TOP 需 clickY-posY<=0.5，BOTTOM 需 >0.5
+            dy = state.m_61143_((Property)StairBlock.f_56842_) == Half.TOP ? (dy -= 0.1) : (dy += 0.1);
         } else if (block instanceof SlabBlock && state.m_61143_((Property)SlabBlock.f_56353_) != SlabType.DOUBLE) {
-            dy = state.m_61143_((Property)SlabBlock.f_56353_) == SlabType.TOP ? (dy += 0.9) : (dy += 0.0);
+            // 半砖：TOP 需 clickY-posY>=0.5，BOTTOM 需 <0.5
+            dy = state.m_61143_((Property)SlabBlock.f_56353_) == SlabType.TOP ? (dy += 0.4) : (dy -= 0.4);
         } else if (block instanceof TrapDoorBlock) {
-            dy = state.m_61143_((Property)TrapDoorBlock.f_57515_) == Half.TOP ? (dy += 0.9) : (dy += 0.0);
+            // 活板门：TOP 需 clickY-posY>0.5，BOTTOM 需 <=0.5
+            dy = state.m_61143_((Property)TrapDoorBlock.f_57515_) == Half.TOP ? (dy += 0.4) : (dy -= 0.4);
         }
         return new Vec3(dx, dy, dz);
     }

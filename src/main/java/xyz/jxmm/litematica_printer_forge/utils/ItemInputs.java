@@ -148,27 +148,27 @@ public class ItemInputs {
         }
     }
 
-    public static void execute(Minecraft client) {
+    public static boolean execute(Minecraft client) {
         if (!ItemInputs.canHandle()) {
             MessageHolder.sendUniqueMessageActionBar(client.f_91074_, "Cooldown....");
-            return;
+            return false;
         }
         ItemInputs.handle();
         boolean allowNamed = LitematicaMixinMod.INVENTORY_OPERATIONS_FILTER_ALLOW_NAMED.getBooleanValue();
         BlockPos where = ItemInputs.rayCast(client);
         if (where == null) {
             MessageHolder.sendUniqueMessageActionBar(client.f_91074_, "Failed to raycast");
-            return;
+            return false;
         }
         if (handledPos.contains(where.m_121878_())) {
             MessageHolder.sendUniqueMessageActionBar(client.f_91074_, "Position is already handled");
             clickedPos = null;
             client.f_91074_.m_242612_();
-            return;
+            return false;
         }
         if (client.f_91074_.f_36096_ == client.f_91074_.f_36095_) {
             MessageHolder.sendUniqueMessageActionBar(client.f_91074_, "Screen is not extra screen");
-            return;
+            return false;
         }
         client.f_91074_.f_36096_.m_150444_();
         client.f_91074_.f_36096_.m_150429_();
@@ -176,21 +176,21 @@ public class ItemInputs {
         if (requiredStacks.isEmpty()) {
             MessageHolder.sendUniqueDebugMessage("required stacks were empty for " + where.m_123344_());
             client.f_91074_.m_242612_();
-            return;
+            return false;
         }
         MessageHolder.sendUniqueDebugMessage("Handled pos " + where.m_123344_());
         List<Slot> nonPlayerSlot = ItemInputs.getNonPlayerSlots(client, client.f_91074_.f_36096_);
         if (ItemInputs.matchStacks(requiredStacks, nonPlayerSlot, client.f_91074_, allowNamed)) {
             if (requiredStacks.size() != nonPlayerSlot.size()) {
                 MessageHolder.sendMessageUncheckedUnique(client.f_91074_, "Sizes differ as " + requiredStacks.size() + " but non-player slot size : " + nonPlayerSlot.size());
-                return;
+                return false;
             }
             if (entry == null || entry.getKey().longValue() != where.m_121878_()) {
                 entry = Map.entry(where.m_121878_(), new Date().getTime() + (long)LitematicaMixinMod.INVENTORY_OPERATIONS_WAIT.getIntegerValue());
-                return;
+                return true;
             }
             if (entry.getValue() > new Date().getTime()) {
-                return;
+                return true;
             }
             entry = null;
             boolean allCorrect = true;
@@ -208,15 +208,16 @@ public class ItemInputs {
                 if (LitematicaMixinMod.INVENTORY_OPERATIONS_CLOSE_SCREEN.getBooleanValue()) {
                     client.f_91074_.m_242612_();
                 }
-            } else {
-                MessageHolder.sendUniqueDebugMessage("Partially failed to send all items at " + where.m_123344_() + ", will retry");
+                return true;
             }
-        } else {
-            MessageHolder.sendUniqueDebugMessage("Does not have enough item for " + where.m_123344_() + "!");
-            if (LitematicaMixinMod.INVENTORY_OPERATIONS_CLOSE_SCREEN.getBooleanValue()) {
-                client.f_91074_.m_242612_();
-            }
+            MessageHolder.sendUniqueDebugMessage("Partially failed to send all items at " + where.m_123344_() + ", will retry");
+            return true;
         }
+        MessageHolder.sendUniqueDebugMessage("Does not have enough item for " + where.m_123344_() + "!");
+        if (LitematicaMixinMod.INVENTORY_OPERATIONS_CLOSE_SCREEN.getBooleanValue()) {
+            client.f_91074_.m_242612_();
+        }
+        return false;
     }
 
     private static void sendItem(Minecraft client, int targetSlot, ItemStack stack, boolean allowNamed) {
