@@ -781,6 +781,25 @@ public class Printer {
                                 Direction facingSchematic;
                                 Block cBlock = stateClient.m_60734_();
                                 sBlock = stateSchematic.m_60734_();
+                                // Correct block type but a fundamentally wrong orientation/half (a stair facing the
+                                // wrong way, a slab placed on the top half instead of the bottom half, ...).
+                                // Right clicking cannot fix these, and unlike connection driven states
+                                // (fence / pane / wall / mushroom) they never settle once the neighbours are built,
+                                // so break the block and let the printer place it again with the correct state.
+                                if (breakBlocks && !ClearArea && Printer.hasDirectionalStateError(stateSchematic, stateClient)) {
+                                    float wrongStateHardness = stateClient.m_60800_((BlockGetter)mc.f_91073_, pos);
+                                    if (wrongStateHardness >= 0.0f) {
+                                        if (wrongStateHardness == 0.0f) {
+                                            mc.f_91072_.m_105269_(pos, Direction.DOWN);
+                                        } else if (!Printer.breaker.isBreakingBlock()) {
+                                            Printer.breaker.startBreakingBlock(pos, mc);
+                                        }
+                                        // Throttle: without this the printer would re-break the very same spot
+                                        // every tick while the breaker is still working on it.
+                                        Printer.cacheEasyPlacePosition(pos, true);
+                                        return InteractionResult.SUCCESS;
+                                    }
+                                }
                                 if (!Printer.blocksMatch(sBlock, cBlock) || (facingSchematic = BlockUtils.getFirstPropertyFacingValue((BlockState)stateSchematic)) != (facingClient = BlockUtils.getFirstPropertyFacingValue((BlockState)stateClient))) continue;
                                 int clickTimes = 0;
                                 Direction side = Direction.NORTH;
@@ -1998,6 +2017,35 @@ public class Printer {
 
     private static boolean containsWaterloggable(BlockState state) {
         return state.m_60734_() instanceof SimpleWaterloggedBlock && (Boolean)state.m_61143_((Property)BlockStateProperties.f_61362_) != false;
+    }
+
+    /**
+     * Detects a state error that can never converge on its own: the block type already matches the
+     * schematic, but the orientation (or the top/bottom half) is wrong.
+     *
+     * Examples: a stair rotated the wrong way, a slab placed on the top half instead of the bottom
+     * half, an observer facing the wrong direction. None of these can be fixed by right clicking,
+     * and they are not neighbour driven either, so they stay wrong forever unless the block is
+     * broken and placed again.
+     *
+     * Deliberately NOT compared (they converge by themselves once the neighbours exist):
+     * stair shape, fence/pane/wall/mushroom connection flags, powered/open/waterlogged style flags.
+     */
+    public static boolean hasDirectionalStateError(BlockState stateSchematic, BlockState stateClient) {
+        Block block = stateSchematic.m_60734_();
+        if (block != stateClient.m_60734_()) {
+            return false;
+        }
+        if (BlockUtils.getFirstPropertyFacingValue(stateSchematic) != BlockUtils.getFirstPropertyFacingValue(stateClient)) {
+            return true;
+        }
+        if ((block instanceof StairBlock || block instanceof TrapDoorBlock) && stateSchematic.m_61143_((Property)StairBlock.f_56842_) != stateClient.m_61143_((Property)StairBlock.f_56842_)) {
+            return true;
+        }
+        if (block instanceof SlabBlock && stateSchematic.m_61143_((Property)SlabBlock.f_56353_) != stateClient.m_61143_((Property)SlabBlock.f_56353_)) {
+            return true;
+        }
+        return false;
     }
 
     private static boolean printerCheckCancel(BlockState stateSchematic, BlockState stateClient) {
