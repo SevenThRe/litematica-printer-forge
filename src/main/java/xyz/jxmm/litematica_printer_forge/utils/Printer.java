@@ -268,6 +268,7 @@ import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.ComparatorMode;
+import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.block.state.properties.Half;
 import net.minecraft.world.level.block.state.properties.Property;
@@ -319,14 +320,14 @@ public class Printer {
         }
         catch (Exception e) {
             MessageHolder.sendMessageUncheckedUnique("Cannot get tested orientation of given block " + String.valueOf(state.m_60734_().m_49954_()));
-            return player.m_6350_() == BlockUtils.getFirstPropertyFacingValue((BlockState)state);
+            return player.m_6350_() == getFacingValueQuietly((BlockState)state);
         }
         if (testState == null) {
             MessageHolder.sendMessageUncheckedUnique("Cannot get tested orientation of given block " + String.valueOf(state.m_60734_().m_49954_()));
-            return player.m_6350_() == BlockUtils.getFirstPropertyFacingValue((BlockState)state);
+            return player.m_6350_() == getFacingValueQuietly((BlockState)state);
         }
-        Direction testFacing = BlockUtils.getFirstPropertyFacingValue((BlockState)testState);
-        return testFacing == BlockUtils.getFirstPropertyFacingValue((BlockState)state);
+        Direction testFacing = getFacingValueQuietly((BlockState)testState);
+        return testFacing == getFacingValueQuietly((BlockState)state);
     }
 
     public static boolean canPickBlock(Minecraft mc, BlockState preference, BlockPos pos) {
@@ -800,7 +801,7 @@ public class Printer {
                                         return InteractionResult.SUCCESS;
                                     }
                                 }
-                                if (!Printer.blocksMatch(sBlock, cBlock) || (facingSchematic = BlockUtils.getFirstPropertyFacingValue((BlockState)stateSchematic)) != (facingClient = BlockUtils.getFirstPropertyFacingValue((BlockState)stateClient))) continue;
+                                if (!Printer.blocksMatch(sBlock, cBlock) || (facingSchematic = getFacingValueQuietly((BlockState)stateSchematic)) != (facingClient = getFacingValueQuietly((BlockState)stateClient))) continue;
                                 int clickTimes = 0;
                                 Direction side = Direction.NORTH;
                                 if (sBlock instanceof RepeaterBlock && !LitematicaMixinMod.ACCURATE_BLOCK_PLACEMENT.getBooleanValue()) {
@@ -901,8 +902,8 @@ public class Printer {
                                 }
                             } else if (sBlock instanceof ObserverBlock || sBlock instanceof PistonBaseBlock || sBlock instanceof RepeaterBlock || sBlock instanceof ComparatorBlock || sBlock instanceof FenceGateBlock || sBlock instanceof TrapDoorBlock) {
                                 Direction facingClient;
-                                Direction facingSchematic = BlockUtils.getFirstPropertyFacingValue((BlockState)stateSchematic);
-                                ShouldFix = facingSchematic != (facingClient = BlockUtils.getFirstPropertyFacingValue((BlockState)stateClient));
+                                Direction facingSchematic = getFacingValueQuietly((BlockState)stateSchematic);
+                                ShouldFix = facingSchematic != (facingClient = getFacingValueQuietly((BlockState)stateClient));
                                 ShapeBoolean = facingClient.m_122424_().equals((Object)facingSchematic);
                             }
                             Direction side = Direction.UP;
@@ -1145,7 +1146,7 @@ public class Printer {
                                 ++interact;
                             }
                         }
-                        if ((facing = BlockUtils.getFirstPropertyFacingValue((BlockState)stateSchematic)) != null) {
+                        if ((facing = getFacingValueQuietly((BlockState)stateSchematic)) != null) {
                             facing = facing.m_122424_();
                         }
                         if (stateSchematic.m_60734_() instanceof BaseRailBlock) {
@@ -1269,7 +1270,7 @@ public class Printer {
                                     continue;
                                 }
                                 if (Printer.canPlaceFace(FacingData.getFacingData(stateSchematic), stateSchematic, primaryFacing, horizontalFacing)) {
-                                    Direction required = BlockUtils.getFirstPropertyFacingValue((BlockState)stateSchematic);
+                                    Direction required = getFacingValueQuietly((BlockState)stateSchematic);
                                     required = Printer.applyPlacementFacing(stateSchematic, required, stateClient);
                                     Vec3 hitVec = Printer.applyHitVec(npos, stateSchematic, required);
                                     if (!Printer.doSchematicWorldPickBlock(mc, stateSchematic, pos)) continue;
@@ -1892,7 +1893,7 @@ public class Printer {
         if (((Boolean)stateSchematic.m_61143_((Property)ObserverBlock.f_55082_)).booleanValue()) {
             return false;
         }
-        Direction facingSchematic = BlockUtils.getFirstPropertyFacingValue((BlockState)stateSchematic);
+        Direction facingSchematic = getFacingValueQuietly((BlockState)stateSchematic);
         assert (facingSchematic != null);
         boolean observerCantAvoid = Printer.ObserverCantAvoid(mc, world, facingSchematic, pos);
         if (observerCantAvoid) {
@@ -1931,7 +1932,7 @@ public class Printer {
         if (((Boolean)stateSchematic.m_61143_((Property)ObserverBlock.f_55082_)).booleanValue()) {
             return null;
         }
-        Direction facingSchematic = BlockUtils.getFirstPropertyFacingValue((BlockState)stateSchematic);
+        Direction facingSchematic = getFacingValueQuietly((BlockState)stateSchematic);
         assert (facingSchematic != null);
         boolean observerCantAvoid = Printer.ObserverCantAvoid(mc, world, facingSchematic, pos);
         if (observerCantAvoid) {
@@ -1971,7 +1972,7 @@ public class Printer {
         if (stateSchematic.m_60713_(Blocks.f_50623_)) {
             return true;
         }
-        Direction facing = BlockUtils.getFirstPropertyFacingValue((BlockState)stateSchematic);
+        Direction facing = getFacingValueQuietly((BlockState)stateSchematic);
         if (stateSchematic.m_60734_() instanceof BaseRailBlock) {
             facing = Printer.convertRailShapetoFace(stateSchematic);
         }
@@ -2020,6 +2021,21 @@ public class Printer {
     }
 
     /**
+     * Silent replacement for MaFgLib's BlockUtils.getFirstPropertyFacingValue: that method sends
+     * a chat warning ("... does not have facing data, please add this!") for every block without a
+     * facing property, which spams the chat when called on state-only mismatches such as chiseled
+     * bookshelves. Same lookup, no warning.
+     */
+    private static Direction getFacingValueQuietly(BlockState state) {
+        for (Property<?> property : state.m_61147_()) {
+            if (property instanceof DirectionProperty) {
+                return (Direction)state.m_61143_((Property)property);
+            }
+        }
+        return null;
+    }
+
+    /**
      * Detects a state error that can never converge on its own: the block type already matches the
      * schematic, but the orientation (or the top/bottom half) is wrong.
      *
@@ -2036,7 +2052,7 @@ public class Printer {
         if (block != stateClient.m_60734_()) {
             return false;
         }
-        if (BlockUtils.getFirstPropertyFacingValue(stateSchematic) != BlockUtils.getFirstPropertyFacingValue(stateClient)) {
+        if (getFacingValueQuietly(stateSchematic) != getFacingValueQuietly(stateClient)) {
             return true;
         }
         if ((block instanceof StairBlock || block instanceof TrapDoorBlock) && stateSchematic.m_61143_((Property)StairBlock.f_56842_) != stateClient.m_61143_((Property)StairBlock.f_56842_)) {
@@ -2404,7 +2420,7 @@ public class Printer {
         double y = pos.m_123342_();
         double z = pos.m_123343_();
         Block block = state.m_60734_();
-        Direction facing = BlockUtils.getFirstPropertyFacingValue((BlockState)state);
+        Direction facing = getFacingValueQuietly((BlockState)state);
         int railEnumCode = Printer.getRailShapeOrder(state);
         int propertyIncrement = 16;
         if (facing == null && railEnumCode == 32 && !(block instanceof SlabBlock)) {
