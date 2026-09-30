@@ -464,8 +464,16 @@ public class FakeAccurateBlockPlacement {
             MessageHolder.sendOrderMessage("Tried emptying queue but still holding " + String.valueOf(queued.blockState) + " at " + queued.pos.m_123344_());
             return false;
         }
-        FakeAccurateBlockPlacement.placeBlock(blockPos, blockState);
-        return true;
+        // placeFromQueue just placed ANOTHER block using ITS fake rotation. Placing this block now
+        // would use the previous block's stale rotation, so it gets oriented wrongly and the
+        // directional-state check breaks it again next tick - an endless place/break loop
+        // (barrel + fence gate next to each other, trapdoors). Only place when the rotation that
+        // was requested for THIS block is already active; otherwise wait a tick.
+        if (requestedTicks <= 0 && fakeDirection == lookRefdir && fp == fakePitch && fy == fakeYaw) {
+            FakeAccurateBlockPlacement.placeBlock(blockPos, blockState);
+            return true;
+        }
+        return false;
     }
 
     public static boolean canPlace(BlockState state, BlockPos pos) {
@@ -514,7 +522,10 @@ public class FakeAccurateBlockPlacement {
         Vec3 appliedHitVec = Printer.applyHitVec(pos, blockState, side);
         if (blockState.m_60734_() instanceof TrapDoorBlock) {
             side = blockState.m_61143_((Property)TrapDoorBlock.f_57515_) == Half.BOTTOM ? Direction.UP : Direction.DOWN;
-            appliedHitVec = Vec3.m_82528_((Vec3i)pos);
+            // Hit slightly INSIDE the block on the clicked-face plane instead of the exact block
+            // corner: a boundary-corner hit vector can be rejected by server-side click validation.
+            boolean bottomHalf = blockState.m_61143_((Property)TrapDoorBlock.f_57515_) == Half.BOTTOM;
+            appliedHitVec = new Vec3((double)pos.m_123341_() + 0.5, (double)pos.m_123342_() + (bottomHalf ? 0.1 : 0.9), (double)pos.m_123343_() + 0.5);
         } else if (blockState.m_60734_() instanceof GrindstoneBlock) {
             appliedHitVec = Vec3.m_82512_((Vec3i)pos);
             if (blockState.m_61143_((Property)GrindstoneBlock.f_53179_) == AttachFace.CEILING) {
