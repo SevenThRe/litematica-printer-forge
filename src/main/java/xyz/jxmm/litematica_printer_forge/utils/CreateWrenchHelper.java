@@ -111,6 +111,12 @@ final class CreateWrenchHelper {
         if (wrench == null) {
             return false;
         }
+        // A wrench click was sent recently; report handled so the caller neither
+        // spams more clicks nor starts breaking the block while waiting for the
+        // server to apply the rotation.
+        if (Printer.isPositionCached(pos, false)) {
+            return true;
+        }
         if (!InventoryUtils.swapToItem(mc, wrench)) {
             return false;
         }
