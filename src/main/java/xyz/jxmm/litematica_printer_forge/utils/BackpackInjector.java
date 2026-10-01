@@ -338,15 +338,27 @@ public class BackpackInjector {
         return item == Items.f_41852_ ? null : item;
     }
 
+    public static void addMaterialFor(Map<Item, Integer> needed, Map<Item, Integer> minY,
+                                      BlockState schemState, int worldY) {
+        addMaterialFor(needed, minY, schemState, worldY, false);
+    }
+
     /**
      * Adds the storable items needed for one schematic block into the material maps.
      *
      * Potted plants have no item form of their own (asItem() == AIR), so they expand into the
      * empty flower pot plus the plant they hold; blocks without an item (air, structure void,
      * ...) are skipped. Shared by the litematica scan and the Create blueprint reader.
+     *
+     * @param createRules when true, mirror Create's own {@code ItemRequirement} instead of plain
+     *                    {@code block.asItem()} - that is what the schematicannon / clipboard
+     *                    material list shows (farmland becomes dirt, tall grass becomes 2 grass,
+     *                    double slabs become 2, and so on). Only the Create blueprint path sets
+     *                    this, so the litematica path keeps injecting exactly what the printer
+     *                    consumes.
      */
     public static void addMaterialFor(Map<Item, Integer> needed, Map<Item, Integer> minY,
-                                      BlockState schemState, int worldY) {
+                                      BlockState schemState, int worldY, boolean createRules) {
         if (schemState == null || schemState.m_60795_()) return;
         if (schemState.m_60734_() instanceof FlowerPotBlock) {
             needed.merge(Items.f_42618_, 1, Integer::sum);
@@ -358,12 +370,43 @@ public class BackpackInjector {
             }
             return;
         }
+        if (createRules) {
+            ItemStack[] createMats = CreateMaterialRules.forBlock(schemState);
+            if (createMats != null) {                       // NONE = nothing to inject
+                addStacks(needed, minY, createMats, worldY);
+                return;
+            }
+            // DEFAULT: no special rule for this block, fall through to asItem()
+        }
         Item item = schemState.m_60734_().m_5456_();
         if (item == Items.f_41852_) return;
         item = BlockReplacer.resolve(item);
         if (item == Items.f_41852_) return;
         needed.merge(item, 1, Integer::sum);
         minY.merge(item, worldY, Math::min);
+    }
+
+    /**
+     * Adds the materials a blueprint entity asks for. Create stores Super Glue (and item frames /
+     * armor stands) as entities inside the structure file, and its material list requires the
+     * matching item - glue is a {@code DAMAGE} requirement, so it is held rather than consumed.
+     */
+    public static void addEntityMaterialFor(Map<Item, Integer> needed, Map<Item, Integer> minY,
+                                            net.minecraft.nbt.CompoundTag entityNbt, int worldY) {
+        if (needed == null) return;
+        addStacks(needed, minY, CreateMaterialRules.forEntity(entityNbt), worldY);
+    }
+
+    private static void addStacks(Map<Item, Integer> needed, Map<Item, Integer> minY,
+                                  ItemStack[] stacks, int worldY) {
+        if (stacks == null || stacks.length == 0) return;
+        for (ItemStack st : stacks) {
+            if (st == null || st.m_41619_()) continue;
+            Item item = BlockReplacer.resolve(st.m_41720_());
+            if (item == Items.f_41852_) continue;
+            needed.merge(item, st.m_41613_(), Integer::sum);
+            minY.merge(item, worldY, Math::min);
+        }
     }
 
     public static boolean isBackpackStack(ItemStack stack) {

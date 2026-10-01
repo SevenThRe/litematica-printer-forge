@@ -295,8 +295,9 @@ public final class CreateBlueprintHelper {
                 if (schemState == null || schemState.m_60795_()) continue;
                 BlockPos worldPos = anchor == null ? e.getKey() : anchor.m_121955_(e.getKey());
                 if (!isMissing(mc, worldPos, schemState)) continue;
-                BackpackInjector.addMaterialFor(needed, minY, schemState, worldPos.m_123342_());
+                BackpackInjector.addMaterialFor(needed, minY, schemState, worldPos.m_123342_(), true);
             }
+            countEntityMaterials(schematicWorld, needed, minY);
             return true;
         }
 
@@ -314,7 +315,33 @@ public final class CreateBlueprintHelper {
             if (!mc.f_91073_.m_46805_(pos)) continue; // cannot know unloaded chunks
             BlockState state = mc.f_91073_.m_8055_(pos);
             if (state == null || state.m_60795_()) continue;
-            BackpackInjector.addMaterialFor(needed, minY, state, pos.m_123342_());
+            BackpackInjector.addMaterialFor(needed, minY, state, pos.m_123342_(), true);
+        }
+    }
+
+    /**
+     * Materials for the entities a deployed blueprint carries. Create keeps Super Glue as an
+     * entity inside the structure file, so the cannon / clipboard material list asks for the glue
+     * item even though no block in the blueprint represents it.
+     */
+    private static void countEntityMaterials(SchematicWorld schematicWorld,
+                                             Map<Item, Integer> needed, Map<Item, Integer> minY) {
+        try {
+            schematicWorld.getEntityStream().forEach(entity -> {
+                if (entity == null) return;
+                CompoundTag nbt = new CompoundTag();
+                try {
+                    entity.m_20223_(nbt);                       // saveWithoutId
+                    net.minecraft.resources.ResourceLocation id =
+                            net.minecraftforge.registries.ForgeRegistries.ENTITY_TYPES.getKey(entity.m_6095_());
+                    if (id != null) nbt.m_128359_("id", id.toString());
+                } catch (Throwable ignored) {
+                    // no id -> the rules simply find nothing to add
+                }
+                BackpackInjector.addEntityMaterialFor(needed, minY, nbt, Integer.MAX_VALUE);
+            });
+        } catch (Throwable ignored) {
+            // no entity data available for this blueprint
         }
     }
 
@@ -370,8 +397,17 @@ public final class CreateBlueprintHelper {
             }
             if (state == null) continue;
             for (int n = 0; n < counts[i]; n++) {
-                BackpackInjector.addMaterialFor(needed, minY, state, Integer.MAX_VALUE);
+                BackpackInjector.addMaterialFor(needed, minY, state, Integer.MAX_VALUE, true);
             }
+        }
+
+        // Entities: Create keeps Super Glue (plus item frames / armor stands) in the structure's
+        // "entities" list and its material list asks for the matching item for each of them.
+        ListTag entities = tag.m_128437_("entities", TAG_COMPOUND);
+        for (int i = 0; i < entities.size(); i++) {
+            CompoundTag entityTag = entities.m_128728_(i);
+            if (entityTag == null || !entityTag.m_128441_("nbt")) continue;
+            BackpackInjector.addEntityMaterialFor(needed, minY, entityTag.m_128469_("nbt"), Integer.MAX_VALUE);
         }
     }
 
