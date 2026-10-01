@@ -97,6 +97,18 @@ public class LitematicaMixinMod {
     public static final ConfigString AUTO_BUILD_TERMINAL_POS = new ConfigString("autoBuildTerminalPos", "", "Saved RS grid terminal position (x,y,z). Empty = auto-detect");
     public static final ConfigBoolean AUTO_BUILD_SCAFFOLD_ESP = new ConfigBoolean("autoBuildScaffoldEsp", true, "Highlight auto-build scaffold blocks (will be dismantled at cleanup)");
     public static final ConfigColor AUTO_BUILD_SCAFFOLD_COLOR = new ConfigColor("autoBuildScaffoldColor", "#FF40FF40", "ESP highlight color for auto-build scaffold blocks");
+    // OP fast builder: builds the blueprint gap with batched vanilla /fill + /setblock commands.
+    // Only available when the server put the fill and setblock nodes into our command tree, which
+    // is exactly the same permission check the server applies when the command runs.
+    public static final ConfigBoolean FAST_BUILD_ENABLED = new ConfigBoolean("fastBuildEnabled", true, "Enable the OP fast builder (vanilla /fill + /setblock based)");
+    public static final ConfigHotkey FAST_BUILD_HOTKEY = new ConfigHotkey("fastBuildHotkey", "", KeybindSettings.PRESS_ALLOWEXTRA, "Start or stop the OP fast builder for all enabled placements");
+    public static final ConfigInteger FAST_BUILD_FILL_PER_TICK = new ConfigInteger("fastBuildFillPerTick", 2, 0, 64, "Max /fill commands sent per tick");
+    public static final ConfigInteger FAST_BUILD_SET_PER_TICK = new ConfigInteger("fastBuildSetblockPerTick", 8, 0, 128, "Max /setblock commands sent per tick");
+    public static final ConfigInteger FAST_BUILD_MAX_BOX = new ConfigInteger("fastBuildMaxBlocksPerCommand", 4096, 16, 32768, "Max blocks per /fill command; lowered automatically when the server refuses large fills");
+    public static final ConfigBoolean FAST_BUILD_INCLUDE_NBT = new ConfigBoolean("fastBuildIncludeBlockEntityData", true, "Send block entity data with /setblock so filters, inventories and other configured contents are restored");
+    public static final ConfigInteger FAST_BUILD_RETRIES = new ConfigInteger("fastBuildVerifyRounds", 3, 1, 10, "Build/verify rounds; leftover blocks are retried each round");
+    public static final ConfigBoolean FAST_BUILD_SINGLEPLAYER_BOOST = new ConfigBoolean("fastBuildSingleplayerBoost", true, "Multiply the per tick command budget in singleplayer, where no packets are involved");
+    public static final ConfigBoolean FAST_BUILD_SAFE_MODE = new ConfigBoolean("fastBuildSafeMode", false, "Throttle to one command per 20 ticks; needed on servers that grant permission level 2 without adding the player to the op list, because the vanilla command spam counter only exempts real ops");
     public static final ConfigBoolean ESP_HIGHLIGHT_MISSING = new ConfigBoolean("espHighlightMissingBlocks", true, "Highlight schematic missing blocks through walls (ESP)");
     public static final ConfigBoolean ESP_VERIFICATION_MODE = new ConfigBoolean("espVerificationMode", false, "Verification mode: highlight ALL missing blocks; when off, only highlight blocks matching held item");
     public static final ConfigBoolean ESP_SCAN_ALL = new ConfigBoolean("espScanEntireSchematic", true, "Scan the entire schematic for missing blocks instead of only around the player");
@@ -112,7 +124,7 @@ public class LitematicaMixinMod {
             com.google.common.collect.ImmutableList.of(),
             "Block replacement mappings, one per line: from=to (e.g. minecraft:horn_coral_block=minecraft:sponge)");
     public static ImmutableList.Builder<IConfigBase> originalList = ImmutableList.builder();
-    public static final ImmutableList<IConfigBase> betterList = originalList.addAll((Iterable)ImmutableList.of((Object)VERIFY_INVENTORY, (Object)USE_INVENTORY_CACHE, (Object)PRINTER_OFF, (Object)PRINTER_ONLY_FAKE_ROTATION_MODE, (Object)DISABLE_SYNC, (Object)DEBUG_MESSAGE, (Object)DEBUG_EXTRA_MESSAGE, (Object)DEBUG_ORDER_PLACEMENTS, (Object)DEBUG_PACKET_SYNC, (Object)DISABLE_SINGLEPLAYER_HANDLE, (Object)SLEEP_AFTER_CONSUME, (Object)EASY_PLACE_MODE_RANGE_X, (Object[])new ConfigBase[]{EASY_PLACE_MODE_RANGE_Y, EASY_PLACE_MODE_RANGE_Z, EASY_PLACE_CACHE_TIME, PRINTER_MAX_BLOCKS, PRINTER_MAX_ITEM_CHANGES, PRINTER_BREAK_BLOCKS, PRINTER_BREAK_IGNORE_EXTRA, PRINTER_BREAK_EXTRA_BLOCKS, PRINTER_SKIP_UNKNOWN_BLOCKSTATE, EASY_PLACE_MODE_DELAY, EASY_PLACE_MODE_HOTBAR_ONLY, FLIPPIN_CACTUS, INVENTORY_OPERATIONS, INVENTORY_OPERATIONS_WAIT, INVENTORY_OPERATIONS_RETRY, INVENTORY_OPERATIONS_CLOSE_SCREEN, INVENTORY_OPERATIONS_FILTER_ALLOW_NAMED, CLEAR_AREA_MODE, PRINTER_PLACE_ICE, PRINTER_PLACE_MINECART, PRINTER_CLEAR_FLUIDS_AUTOMATICALLY, CLEAR_AREA_MODE_COBBLESTONE, CLEAR_AREA_MODE_SNOWPREVENT, ACCURATE_BLOCK_PLACEMENT, PRINTER_WATERLOGGED_WATER_FIRST, PRINTER_PUMPKIN_PIE_FOR_COMPOSTER, ADVANCED_ACCURATE_BLOCK_PLACEMENT, PRINTER_SMART_REDSTONE_AVOID, PRINTER_OBSERVER_AVOID_ALL, PRINTER_SUPPRESS_PUSH_LIMIT, AVOID_CHECK_ONLY_PISTONS, BEDROCK_BREAKING, BEDROCK_BREAKING_FORCE_TORCH, BEDROCK_BREAKING_RANGE_SAFE, BEDROCK_BREAKING_CLEAR_WAIT, FAKE_ROTATION_BETA, FAKE_ROTATION_TICKS, FAKE_ROTATION_LIMIT, BII_ENABLED, BI_MAX_SLOTS, BII_INJECT_HOTKEY, BII_CREATE_BLUEPRINT, PRINTER_HOTKEY, ESP_HIGHLIGHT_MISSING, ESP_VERIFICATION_MODE, ESP_HIGHLIGHT_BY_INVENTORY, ESP_SCAN_ALL, ESP_SCAN_INTERVAL, ESP_SCAN_RANGE, ESP_MAX_RENDER, ESP_MISSING_COLOR, ESP_HELD_COLOR, CORAL_REPLACE_ENABLED, CORAL_REPLACE_MAPPINGS, REPLACE_EDITOR_HOTKEY, AUTO_BUILD_TOGGLE_HOTKEY, AUTO_BUILD_PAUSE_HOTKEY, AUTO_BUILD_MARK_TERMINAL_HOTKEY, AUTO_BUILD_SELECTED_ONLY, AUTO_BUILD_SKIP_MISSING, AUTO_BUILD_PRINT_WHILE_MOVING, AUTO_BUILD_ALLOW_PATH_BREAK, AUTO_BUILD_ALLOW_SCAFFOLD, AUTO_BUILD_RS_EXTRACT, AUTO_BUILD_SB_TRANSFER, AUTO_BUILD_LOW_HEALTH, AUTO_BUILD_ARRIVE_TIMEOUT, AUTO_BUILD_UNREACHABLE_RETRIES, AUTO_BUILD_MENU_OP_RETRIES, AUTO_BUILD_TERMINAL_POS, AUTO_BUILD_SCAFFOLD_ESP, AUTO_BUILD_SCAFFOLD_COLOR})).build();
+    public static final ImmutableList<IConfigBase> betterList = originalList.addAll((Iterable)ImmutableList.of((Object)VERIFY_INVENTORY, (Object)USE_INVENTORY_CACHE, (Object)PRINTER_OFF, (Object)PRINTER_ONLY_FAKE_ROTATION_MODE, (Object)DISABLE_SYNC, (Object)DEBUG_MESSAGE, (Object)DEBUG_EXTRA_MESSAGE, (Object)DEBUG_ORDER_PLACEMENTS, (Object)DEBUG_PACKET_SYNC, (Object)DISABLE_SINGLEPLAYER_HANDLE, (Object)SLEEP_AFTER_CONSUME, (Object)EASY_PLACE_MODE_RANGE_X, (Object[])new ConfigBase[]{EASY_PLACE_MODE_RANGE_Y, EASY_PLACE_MODE_RANGE_Z, EASY_PLACE_CACHE_TIME, PRINTER_MAX_BLOCKS, PRINTER_MAX_ITEM_CHANGES, PRINTER_BREAK_BLOCKS, PRINTER_BREAK_IGNORE_EXTRA, PRINTER_BREAK_EXTRA_BLOCKS, PRINTER_SKIP_UNKNOWN_BLOCKSTATE, EASY_PLACE_MODE_DELAY, EASY_PLACE_MODE_HOTBAR_ONLY, FLIPPIN_CACTUS, INVENTORY_OPERATIONS, INVENTORY_OPERATIONS_WAIT, INVENTORY_OPERATIONS_RETRY, INVENTORY_OPERATIONS_CLOSE_SCREEN, INVENTORY_OPERATIONS_FILTER_ALLOW_NAMED, CLEAR_AREA_MODE, PRINTER_PLACE_ICE, PRINTER_PLACE_MINECART, PRINTER_CLEAR_FLUIDS_AUTOMATICALLY, CLEAR_AREA_MODE_COBBLESTONE, CLEAR_AREA_MODE_SNOWPREVENT, ACCURATE_BLOCK_PLACEMENT, PRINTER_WATERLOGGED_WATER_FIRST, PRINTER_PUMPKIN_PIE_FOR_COMPOSTER, ADVANCED_ACCURATE_BLOCK_PLACEMENT, PRINTER_SMART_REDSTONE_AVOID, PRINTER_OBSERVER_AVOID_ALL, PRINTER_SUPPRESS_PUSH_LIMIT, AVOID_CHECK_ONLY_PISTONS, BEDROCK_BREAKING, BEDROCK_BREAKING_FORCE_TORCH, BEDROCK_BREAKING_RANGE_SAFE, BEDROCK_BREAKING_CLEAR_WAIT, FAKE_ROTATION_BETA, FAKE_ROTATION_TICKS, FAKE_ROTATION_LIMIT, BII_ENABLED, BI_MAX_SLOTS, BII_INJECT_HOTKEY, BII_CREATE_BLUEPRINT, PRINTER_HOTKEY, ESP_HIGHLIGHT_MISSING, ESP_VERIFICATION_MODE, ESP_HIGHLIGHT_BY_INVENTORY, ESP_SCAN_ALL, ESP_SCAN_INTERVAL, ESP_SCAN_RANGE, ESP_MAX_RENDER, ESP_MISSING_COLOR, ESP_HELD_COLOR, CORAL_REPLACE_ENABLED, CORAL_REPLACE_MAPPINGS, REPLACE_EDITOR_HOTKEY, AUTO_BUILD_TOGGLE_HOTKEY, AUTO_BUILD_PAUSE_HOTKEY, AUTO_BUILD_MARK_TERMINAL_HOTKEY, AUTO_BUILD_SELECTED_ONLY, AUTO_BUILD_SKIP_MISSING, AUTO_BUILD_PRINT_WHILE_MOVING, AUTO_BUILD_ALLOW_PATH_BREAK, AUTO_BUILD_ALLOW_SCAFFOLD, AUTO_BUILD_RS_EXTRACT, AUTO_BUILD_SB_TRANSFER, AUTO_BUILD_LOW_HEALTH, AUTO_BUILD_ARRIVE_TIMEOUT, AUTO_BUILD_UNREACHABLE_RETRIES, AUTO_BUILD_MENU_OP_RETRIES, AUTO_BUILD_TERMINAL_POS, AUTO_BUILD_SCAFFOLD_ESP, FAST_BUILD_ENABLED, FAST_BUILD_HOTKEY, FAST_BUILD_FILL_PER_TICK, FAST_BUILD_SET_PER_TICK, FAST_BUILD_MAX_BOX, FAST_BUILD_INCLUDE_NBT, FAST_BUILD_RETRIES, FAST_BUILD_SINGLEPLAYER_BOOST, FAST_BUILD_SAFE_MODE})).build();
 
     public LitematicaMixinMod() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
@@ -125,6 +137,7 @@ public class LitematicaMixinMod {
         MinecraftForge.EVENT_BUS.register(MissingBlockEsp.class);
         MinecraftForge.EVENT_BUS.register(xyz.jxmm.litematica_printer_forge.autobuild.scaffold.ScaffoldEsp.class);
         xyz.jxmm.litematica_printer_forge.autobuild.director.BuildCommand.register();
+        xyz.jxmm.litematica_printer_forge.fastbuild.FastBuildCommand.register();
     }
 
     private static boolean isHotkeyPressed(ConfigHotkey hotkey, net.minecraft.client.Minecraft mc) {
@@ -154,6 +167,7 @@ public class LitematicaMixinMod {
     private static boolean wasAutoBuildTogglePressed = false;
     private static boolean wasAutoBuildPausePressed = false;
     private static boolean wasMarkTerminalPressed = false;
+    private static boolean wasFastBuildPressed = false;
 
     // Hotkey to open the visual block replacement mapping editor.
     @net.minecraftforge.eventbus.api.SubscribeEvent
@@ -196,6 +210,15 @@ public class LitematicaMixinMod {
 
         // Auto Build Director tick (zero overhead when not running)
         xyz.jxmm.litematica_printer_forge.autobuild.director.AutoBuildDirector.tick(mc);
+
+        // OP fast builder hotkey + job tick (both no-ops while idle)
+        boolean fbPressed = isHotkeyPressed(FAST_BUILD_HOTKEY, mc);
+        boolean fbJust = fbPressed && !wasFastBuildPressed;
+        wasFastBuildPressed = fbPressed;
+        if (fbJust && mc.f_91073_ != null) {
+            xyz.jxmm.litematica_printer_forge.fastbuild.FastBuildJob.toggle(mc);
+        }
+        xyz.jxmm.litematica_printer_forge.fastbuild.FastBuildJob.tick(mc);
 
         // Scaffold marker lifecycle: load on world join, debounced save,
         // release markers whose cells became air (FR-17).
