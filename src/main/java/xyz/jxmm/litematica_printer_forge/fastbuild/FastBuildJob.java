@@ -705,6 +705,9 @@ public final class FastBuildJob {
                 sent = true;
             } else {
                 stats.commandsSkipped++;
+                if (abortIfRefused(mc)) {
+                    return;
+                }
             }
             fillBudget--;
         }
@@ -716,6 +719,9 @@ public final class FastBuildJob {
                 sent = true;
             } else {
                 stats.commandsSkipped++;
+                if (abortIfRefused(mc)) {
+                    return;
+                }
             }
             setBudget--;
         }
@@ -727,6 +733,23 @@ public final class FastBuildJob {
             // nothing went out this tick - don't spin forever on a stuck queue
             stats.commandsSkipped++;
         }
+    }
+
+    /**
+     * A refused send is a hard verdict: {@code CommandSender} refuses exactly when the client
+     * command tree (which is the server's own tree) would reject the command, so retrying or
+     * spraying more packets cannot help. Bail out instead of spinning on a stuck queue.
+     */
+    private static boolean abortIfRefused(Minecraft mc) {
+        String reason = CommandSender.lastReject;
+        if (reason == null) {
+            return false;
+        }
+        stop(mc, false);
+        aborted = true;
+        abortReason = reason;
+        say(mc, "aborted: " + reason, false);
+        return true;
     }
 
     private static boolean emit(Minecraft mc, Op op) {
