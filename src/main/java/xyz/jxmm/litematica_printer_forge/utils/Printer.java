@@ -739,6 +739,16 @@ public class Printer {
                             continue;
                         }
                     }
+                    // Potted plants (and empty pots) must be handled before ALL break logic below:
+                    // a placed empty pot under a potted-schematic target is a DIFFERENT block type
+                    // with zero hardness, so the generic wrong-state paths would insta-break it and
+                    // the plant could never be added (place pot -> break pot -> place pot -> ...).
+                    if (!ClearArea && range.isPositionWithinRange(pos) && stateSchematic.m_60734_() instanceof FlowerPotBlock) {
+                        if (Printer.placePottedPlant((FlowerPotBlock)stateSchematic.m_60734_(), stateSchematic, mc, pos, isCreative)) {
+                            ++interact;
+                            return InteractionResult.SUCCESS;
+                        }
+                    }
                     if (!breakBlocks && !ClearArea && !Flippincactus && !LitematicaMixinMod.BEDROCK_BREAKING.getBooleanValue() && (world.m_46859_(pos) || world.m_8055_(pos) == mc.f_91073_.m_8055_(pos) || Printer.blocksMatch(world.m_8055_(pos).m_60734_(), mc.f_91073_.m_8055_(pos).m_60734_())) || breakBlocks && LitematicaMixinMod.PRINTER_BREAK_IGNORE_EXTRA.getBooleanValue() && world.m_46859_(pos)) continue;
                     if (!ClearArea) {
                         if (!range.isPositionWithinRange(pos)) continue;
@@ -1900,7 +1910,11 @@ public class Printer {
         }
         if (clientEmpty) {
             // step 2: right-click the empty pot with the plant item -> FlowerPotBlock.use plants it
-            if (!Printer.doSchematicWorldPickBlock(client, stateSchematic, pos)) return false;
+            if (!Printer.doSchematicWorldPickBlock(client, stateSchematic, pos)) {
+                // plant item not in inventory: report handled so the pot is NOT insta-broken
+                // by the generic wrong-state paths; once the item is obtained the plant step runs
+                return true;
+            }
             client.f_91072_.m_233732_(client.f_91074_, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.m_82512_((Vec3i)pos), Direction.UP, pos, false));
             InventoryUtils.decrementCount(isCreative);
             Printer.cacheEasyPlacePosition(pos, false);
