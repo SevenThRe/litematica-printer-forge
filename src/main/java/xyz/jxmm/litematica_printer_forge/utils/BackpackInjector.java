@@ -100,6 +100,21 @@ public class BackpackInjector {
     }
 
     public static void openGui(Minecraft mc) {
+        // Create blueprints carried by the player take priority as the material source; when the
+        // player owns none, the litematica placements are used exactly as before.
+        if (LitematicaMixinMod.BII_CREATE_BLUEPRINT.getBooleanValue() && mc != null && mc.f_91074_ != null) {
+            List<BlueprintEntry> blueprints = CreateBlueprintFix.collectBlueprints(mc);
+            if (blueprints.size() == 1) {
+                openGuiForBlueprint(mc, blueprints.get(0));
+                return;
+            }
+            if (blueprints.size() > 1) {
+                MessageHolder.sendMessageUnchecked("[BII] 找到 " + blueprints.size() + " 张 Create 蓝图");
+                mc.m_91152_(new xyz.jxmm.litematica_printer_forge.gui.BlueprintPickerScreen(blueprints));
+                return;
+            }
+        }
+
         // Prefer the placement currently selected in litematica, so BII always matches
         // what the user has selected in the schematic browser.
         SchematicPlacement selected = DataManager.getSchematicPlacementManager().getSelectedSchematicPlacement();
@@ -129,7 +144,8 @@ public class BackpackInjector {
         }
     }
 
-    private static SchematicPlacement pendingPlacement = null;
+    /** Pending "open the backpack, then show this GUI with the synced menu" action. */
+    private static java.util.function.Consumer<Object> pendingGuiAction = null;
     private static int pendingShowGuiTicks = 0;
     private static boolean waitingToShowGui = false;
     // After the menu is detected, wait for slot data sync (OpenMenu and ContainerSetContent packets do not arrive at the same time)
@@ -137,9 +153,18 @@ public class BackpackInjector {
     private static final int MENU_SYNC_DELAY = 10;
 
     public static void openGuiFor(Minecraft mc, SchematicPlacement placement) {
+        openGuiWhenBackpackReady(mc, menu -> showInjectGui(mc, placement, menu));
+    }
+
+    /** Create blueprint variant of {@link #openGuiFor}: same backpack dance, different material source. */
+    public static void openGuiForBlueprint(Minecraft mc, BlueprintEntry entry) {
+        openGuiWhenBackpackReady(mc, menu -> showInjectGuiForBlueprint(mc, entry, menu));
+    }
+
+    private static void openGuiWhenBackpackReady(Minecraft mc, java.util.function.Consumer<Object> showGui) {
         Object menu = getBackpackMenu(mc);
         if (menu != null && menuReadyDelayTicks >= MENU_SYNC_DELAY) {
-            showInjectGui(mc, placement, menu);
+            showGui.accept(menu);
             return;
         }
 
@@ -150,7 +175,7 @@ public class BackpackInjector {
             return;
         }
         mc.m_91152_(null);
-        pendingPlacement = placement;
+        pendingGuiAction = showGui;
         pendingShowGuiTicks = 0;
         waitingToShowGui = true;
         sendBackpackOpenPacket(mc, backpackSlot);
@@ -203,24 +228,7 @@ public class BackpackInjector {
                             missing = true;
                         }
                         if (!missing) continue;
-                        // Potted plants have no item form of their own (asItem() == AIR), so the generic
-                        // path below would drop them silently. A potted plant needs BOTH the empty flower
-                        // pot and the plant it holds - count each separately.
-                        if (schemState.m_60734_() instanceof FlowerPotBlock) {
-                            Item flower = pottedFlowerItem(schemState);
-                            missingMap.merge(Items.f_42618_, 1, Integer::sum);
-                            minYMap.merge(Items.f_42618_, worldPos.m_123342_(), Math::min);
-                            if (flower != null) {
-                                missingMap.merge(flower, 1, Integer::sum);
-                                minYMap.merge(flower, worldPos.m_123342_(), Math::min);
-                            }
-                            continue;
-                        }
-                        Item item = schemState.m_60734_().m_5456_();
-                        if (item == Items.f_41852_) continue;
-                        item = BlockReplacer.resolve(item);
-                        missingMap.merge(item, 1, Integer::sum);
-                        minYMap.merge(item, worldPos.m_123342_(), Math::min);
+                        addMaterialFor(missingMap, minYMap, schemState, worldPos.m_123342_());
                     }
                 }
             }
@@ -229,6 +237,34 @@ public class BackpackInjector {
             MessageHolder.sendMessageUnchecked("[BII] 「" + placement.getName() + "」没有缺失材料");
             return;
         }
+        openInjectScreen(mc, menu, missingMap, minYMap, placement.getName());
+    }
+
+    /** Create blueprint counterpart of {@link #showInjectGui(SchematicPlacement...)}. */
+    private static void showInjectGuiForBlueprint(Minecraft mc, BlueprintEntry entry, Object menu) {
+        Map<Item, Integer> missingMap = new LinkedHashMap<>();
+        Map<Item, Integer> minYMap = new HashMap<>();
+        if (!CreateBlueprintFix.buildMaterials(mc, entry, missingMap, minYMap)) {
+            MessageHolder.sendMessageUnchecked("[BII] 无法读取蓝图「" + entry.name
+                    + "」：缺少结构文件 schematics/*.nbt（在游戏内预览一次蓝图可让客户端下载）");
+            return;
+        }
+        if (missingMap.isEmpty()) {
+            MessageHolder.sendMessageUnchecked("[BII] 蓝图「" + entry.name + "」没有缺失材料");
+            return;
+        }
+        MessageHolder.sendMessageUnchecked("[BII] 蓝图「" + entry.name + "」共 " + missingMap.size() + " 种材料待注入");
+        openInjectScreen(mc, menu, missingMap, minYMap, "蓝图:" + entry.name);
+    }
+
+    /**
+     * Turns a "needed materials" map into {@link InjectPlan}s (subtracting what the player
+     * inventory and the open backpack already hold) and opens the injection GUI.
+     */
+    private static void openInjectScreen(Minecraft mc, Object menu,
+                                         Map<Item, Integer> missingMap, Map<Item, Integer> minYMap,
+                                         String title) {
+        Inventory inv = mc.f_91074_.m_150109_();
 
         // Count from the open backpack menu. plans covers all short materials (same list as the verifier's missing report);
         // amount defaults to the total shortage (needed - inInv) so the user sees how much is still missing per item;
@@ -254,13 +290,13 @@ public class BackpackInjector {
         }
 
         if (plans.isEmpty()) {
-            MessageHolder.sendMessageUnchecked("[BII] 「" + placement.getName() + "」材料已足够");
+            MessageHolder.sendMessageUnchecked("[BII] 「" + title + "」材料已足够");
             return;
         }
 
         applySort(plans, lastSortMode);
 
-        mc.m_91152_(new BackpackInjectScreen(plans, placement.getName()));
+        mc.m_91152_(new BackpackInjectScreen(plans, title));
     }
 
     /**
@@ -300,6 +336,67 @@ public class BackpackInjector {
         }
         Item item = content.m_5456_();
         return item == Items.f_41852_ ? null : item;
+    }
+
+    /**
+     * Adds the storable items needed for one schematic block into the material maps.
+     *
+     * Potted plants have no item form of their own (asItem() == AIR), so they expand into the
+     * empty flower pot plus the plant they hold; blocks without an item (air, structure void,
+     * ...) are skipped. Shared by the litematica scan and the Create blueprint reader.
+     */
+    public static void addMaterialFor(Map<Item, Integer> needed, Map<Item, Integer> minY,
+                                      BlockState schemState, int worldY) {
+        if (schemState == null || schemState.m_60795_()) return;
+        if (schemState.m_60734_() instanceof FlowerPotBlock) {
+            needed.merge(Items.f_42618_, 1, Integer::sum);
+            minY.merge(Items.f_42618_, worldY, Math::min);
+            Item flower = pottedFlowerItem(schemState);
+            if (flower != null) {
+                needed.merge(flower, 1, Integer::sum);
+                minY.merge(flower, worldY, Math::min);
+            }
+            return;
+        }
+        Item item = schemState.m_60734_().m_5456_();
+        if (item == Items.f_41852_) return;
+        item = BlockReplacer.resolve(item);
+        if (item == Items.f_41852_) return;
+        needed.merge(item, 1, Integer::sum);
+        minY.merge(item, worldY, Math::min);
+    }
+
+    public static boolean isBackpackStack(ItemStack stack) {
+        return stack != null && !stack.m_41619_()
+                && stack.m_41720_().getClass().getName().contains("sophisticatedbackpacks.backpack.BackpackItem");
+    }
+
+    /**
+     * Visits every stack stored inside a Sophisticated Backpack item through its capability,
+     * so backpack contents can be inspected without opening the backpack GUI. Fails silently
+     * when Sophisticated Backpacks is not installed.
+     */
+    public static void forEachBackpackStack(ItemStack backpackStack,
+                                            java.util.function.BiConsumer<Integer, ItemStack> visitor) {
+        try {
+            net.minecraftforge.common.capabilities.Capability<net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.IBackpackWrapper> cap =
+                    net.p3pp3rf1y.sophisticatedbackpacks.api.CapabilityBackpackWrapper.getCapabilityInstance();
+            net.minecraftforge.common.util.LazyOptional<net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.IBackpackWrapper> opt =
+                    backpackStack.getCapability(cap);
+            if (!opt.isPresent()) return;
+            net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.IBackpackWrapper wrapper = opt.orElse(null);
+            if (wrapper == null) return;
+            net.p3pp3rf1y.sophisticatedcore.inventory.ITrackedContentsItemHandler handler = wrapper.getInventoryHandler();
+            if (handler == null) return;
+            int slots = handler.getSlots();
+            for (int s = 0; s < slots; s++) {
+                visitor.accept(s, handler.getStackInSlot(s));
+            }
+        } catch (Throwable t) {
+            if (LitematicaMixinMod.DEBUG_MESSAGE.getBooleanValue()) {
+                MessageHolder.sendMessageUnchecked("[BII-DEBUG] 读取背包内容失败: " + t);
+            }
+        }
     }
 
     public static void inject(List<InjectPlan> plans, int sortMode, Minecraft mc) {
@@ -543,14 +640,15 @@ public class BackpackInjector {
             pendingShowGuiTicks++;
             if (pendingShowGuiTicks > 60) {
                 waitingToShowGui = false;
-                pendingPlacement = null;
+                pendingGuiAction = null;
                 MessageHolder.sendMessageUnchecked("[BII] 打开背包超时");
                 return;
             }
             if (currentMenu != null && menuReadyDelayTicks >= MENU_SYNC_DELAY) {
                 waitingToShowGui = false;
-                showInjectGui(mc, pendingPlacement, currentMenu);
-                pendingPlacement = null;
+                java.util.function.Consumer<Object> action = pendingGuiAction;
+                pendingGuiAction = null;
+                if (action != null) action.accept(currentMenu);
             }
             return;
         }
@@ -575,10 +673,7 @@ public class BackpackInjector {
 
     public static int findBackpackSlot(Inventory inv) {
         for (int i = 0; i < inv.m_6643_(); i++) {
-            ItemStack stack = inv.m_8020_(i);
-            if (stack.m_41619_()) continue;
-            String className = stack.m_41720_().getClass().getName();
-            if (className.contains("sophisticatedbackpacks.backpack.BackpackItem")) {
+            if (isBackpackStack(inv.m_8020_(i))) {
                 return i;
             }
         }
