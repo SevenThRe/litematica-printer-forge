@@ -216,6 +216,7 @@ import net.minecraft.world.level.block.FaceAttachedHorizontalDirectionalBlock;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.FenceBlock;
 import net.minecraft.world.level.block.FenceGateBlock;
+import net.minecraft.world.level.block.FlowerPotBlock;
 import net.minecraft.world.level.block.GlazedTerracottaBlock;
 import net.minecraft.world.level.block.GravelBlock;
 import net.minecraft.world.level.block.GrindstoneBlock;
@@ -1206,6 +1207,10 @@ public class Printer {
                             if (Printer.placeRod(stateSchematic, mc, pos, isCreative)) ++interact;
                             continue;
                         }
+                        if (blockSchematic instanceof FlowerPotBlock) {
+                            if (Printer.placePottedPlant((FlowerPotBlock)blockSchematic, stateSchematic, mc, pos, isCreative)) ++interact;
+                            continue;
+                        }
                         int miliseconds = LitematicaMixinMod.EASY_PLACE_CACHE_TIME.getIntegerValue();
                         if (blockSchematic instanceof FaceAttachedHorizontalDirectionalBlock || blockSchematic instanceof TorchBlock || blockSchematic instanceof WallSkullBlock || blockSchematic instanceof LadderBlock || blockSchematic instanceof TripWireHookBlock || blockSchematic instanceof WallSignBlock || blockSchematic instanceof EndRodBlock || blockSchematic instanceof BaseCoralFanBlock) {
                             if (blockSchematic instanceof ButtonBlock || blockSchematic instanceof LeverBlock) {
@@ -1853,6 +1858,50 @@ public class Printer {
         client.f_91072_.m_233732_(client.f_91074_, InteractionHand.MAIN_HAND, hit);
         InventoryUtils.decrementCount(isCreative);
         Printer.sleepWhenRequired(client);
+        return true;
+    }
+
+    // Potted plants have no item form of their own: the generic path would try to place the bare
+    // plant block and fail. Vanilla requires two steps: (1) place an empty flower pot, (2) right-
+    // click the pot with the plant (FlowerPotBlock.use plants it). A pot holding the wrong plant
+    // is broken first so both steps can be redone. An empty pot in the schematic is placed the
+    // same way (and a wrong plant in it is dumped out by breaking).
+    private static boolean placePottedPlant(FlowerPotBlock sPot, BlockState stateSchematic, Minecraft client, BlockPos pos, boolean isCreative) {
+        Block content = sPot.m_53560_();
+        boolean schematicEmpty = content == null || content.m_5456_() == Items.f_41852_;
+        BlockState clientState = client.f_91073_.m_8055_(pos);
+        Block clientBlock = clientState.m_60734_();
+        if (!(clientBlock instanceof FlowerPotBlock)) {
+            // step 1: no pot yet -> place an empty flower pot by clicking the air target itself
+            // (BlockPlaceContext.replaceClicked then places at the clicked position)
+            if (!clientState.m_247087_()) return false;
+            if (!Printer.doSchematicWorldPickBlock(client, Items.f_42618_.m_7968_())) return false;
+            client.f_91072_.m_233732_(client.f_91074_, InteractionHand.MAIN_HAND, new BlockHitResult(new Vec3((double)pos.m_123341_() + 0.5, (double)pos.m_123342_(), (double)pos.m_123343_() + 0.5), Direction.DOWN, pos, false));
+            InventoryUtils.decrementCount(isCreative);
+            // short cooldown: let the server state settle before the plant step runs
+            Printer.cacheEasyPlacePosition(pos, false, 200);
+            Printer.sleepWhenRequired(client);
+            return true;
+        }
+        Block clientContent = ((FlowerPotBlock)clientBlock).m_53560_();
+        boolean clientEmpty = clientContent == null || clientContent.m_5456_() == Items.f_41852_;
+        if (schematicEmpty) {
+            if (clientEmpty) return false; // already correct
+        } else {
+            if (clientContent == content) return false; // already correct
+        }
+        if (clientEmpty) {
+            // step 2: right-click the empty pot with the plant item -> FlowerPotBlock.use plants it
+            if (!Printer.doSchematicWorldPickBlock(client, stateSchematic, pos)) return false;
+            client.f_91072_.m_233732_(client.f_91074_, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.m_82512_((Vec3i)pos), Direction.UP, pos, false));
+            InventoryUtils.decrementCount(isCreative);
+            Printer.cacheEasyPlacePosition(pos, false);
+            Printer.sleepWhenRequired(client);
+            return true;
+        }
+        // wrong plant in the pot -> break it; the printer redoes both steps on a later tick
+        client.f_91072_.m_105269_(pos, Direction.DOWN);
+        Printer.cacheEasyPlacePosition(pos, true);
         return true;
     }
 
