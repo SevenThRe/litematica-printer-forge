@@ -1,11 +1,18 @@
 package xyz.jxmm.litematica_printer_forge.utils;
 
+import com.simibubi.create.AllBlocks;
 import com.simibubi.create.CreateClient;
+import com.simibubi.create.content.kinetics.belt.BeltBlock;
+import com.simibubi.create.content.kinetics.belt.BeltPart;
 import com.simibubi.create.content.schematics.SchematicAndQuillItem;
 import com.simibubi.create.content.schematics.SchematicInstances;
 import com.simibubi.create.content.schematics.SchematicItem;
 import com.simibubi.create.content.schematics.SchematicWorld;
+import com.simibubi.create.content.schematics.cannon.MaterialChecklist;
 import com.simibubi.create.content.schematics.client.SchematicAndQuillHandler;
+import com.simibubi.create.content.schematics.requirement.ItemRequirement;
+import com.simibubi.create.foundation.utility.BlockHelper;
+import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Vec3i;
@@ -16,7 +23,14 @@ import net.minecraft.nbt.NbtUtils;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.piston.PistonHeadBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BedPart;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 import xyz.jxmm.litematica_printer_forge.LitematicaMixinMod;
 
@@ -36,9 +50,11 @@ import java.util.Map;
  *
  * Two modes:
  * <ul>
- *   <li><b>Deployed blueprint</b> (Create exposes a SchematicWorld): diff against the world,
- *       exactly like the litematica path - positions in the block map are relative to the
- *       schematic anchor, so worldPos = anchor + relative.</li>
+ *   <li><b>Deployed blueprint</b> (Create exposes a SchematicWorld): the material list is built
+ *       with Create's own {@link MaterialChecklist} + {@link ItemRequirement} and the
+ *       schematicannon's per-position placement filter, so it matches the cannon GUI's 缺少物品
+ *       list 1:1 (exact blockstate diff against the world, structural parts ignored, entities
+ *       such as Super Glue included).</li>
  *   <li><b>Blueprint as an item</b>: no anchor exists, so the whole blueprint material list is
  *       used (the caller still subtracts inventory + backpack stock).</li>
  * </ul>
@@ -273,14 +289,16 @@ public final class CreateBlueprintHelper {
                                          Map<Item, Integer> needed, Map<Item, Integer> minY) {
         if (mc == null || mc.f_91073_ == null || entry == null) return false;
 
-        // Mode 0: quill selection - count what the selected region of the world holds.
+        // Mode 0: quill selection - the region of the world the blueprint will be made from.
         if (entry.isSelection()) {
             countSelection(mc, entry.selMin, entry.selMax, needed, minY);
             return true;
         }
         if (entry.stack.m_41619_()) return false;
 
-        // Mode A: the blueprint is deployed in the world -> use Create's own loaded schematic world.
+        // Mode A: the blueprint is deployed -> build the list exactly like the schematicannon
+        // does (Create's own MaterialChecklist + ItemRequirement + the cannon's place filter),
+        // so the result matches the cannon GUI's 缺少物品 list 1:1.
         SchematicWorld schematicWorld = null;
         try {
             schematicWorld = SchematicInstances.get(mc.f_91073_, entry.stack);
@@ -289,68 +307,154 @@ public final class CreateBlueprintHelper {
         }
         if (schematicWorld != null && schematicWorld.getBlockMap() != null
                 && !schematicWorld.getBlockMap().isEmpty()) {
-            BlockPos anchor = schematicWorld.anchor;
-            for (Map.Entry<BlockPos, BlockState> e : schematicWorld.getBlockMap().entrySet()) {
-                BlockState schemState = e.getValue();
-                if (schemState == null || schemState.m_60795_()) continue;
-                BlockPos worldPos = anchor == null ? e.getKey() : anchor.m_121955_(e.getKey());
-                if (!isMissing(mc, worldPos, schemState)) continue;
-                BackpackInjector.addMaterialFor(needed, minY, schemState, worldPos.m_123342_(), true);
-            }
-            countEntityMaterials(schematicWorld, needed, minY);
+            countLikeCannon(mc, schematicWorld, needed, minY);
             return true;
         }
 
-        // Mode B: plain material list of the whole blueprint.
+        // Mode B: plain material list of the whole blueprint (no deployment anchor to diff
+        // against, so nothing can be filtered - Create's requirement rules still apply).
         CompoundTag tag = templateTagOf(mc, entry.stack);
         if (tag == null) return false;
         countTotals(mc, tag, needed, minY);
         return true;
     }
 
+    /**
+     * Rebuilds the schematicannon's material checklist for a deployed blueprint.
+     *
+     * <p>Rule source is Create itself - {@link MaterialChecklist} + {@link ItemRequirement} - so
+     * hand-mirrored rule tables can never drift again. The per-position filter is copied from the
+     * cannon's bytecode ({@code SchematicPrinter.shouldPlaceBlock} + the cannon's own
+     * {@code shouldPlace} predicate at its default replace mode 2):</p>
+     * <ul>
+     *   <li>chunk not loaded -&gt; skipped (the cannon skips it too and just warns),</li>
+     *   <li>world state <b>equal to the schematic state</b> (exact state, age zeroed) -&gt; skipped,
+     *       which is why a shaft that only differs in axis still shows up as 缺少,</li>
+     *   <li>unbreakable blocks (bedrock) skipped,</li>
+     *   <li>structural parts (structure void, double-block upper half, bed head, piston head,
+     *       belt middle) and blocks without a requirement ignored,</li>
+     *   <li>entities (Super Glue, item frames, armor stands) via {@code ItemRequirement.of(Entity)},
+     *       DAMAGE items (glue) land in {@code damageRequired} and are injected too.</li>
+     * </ul>
+     */
+    private static void countLikeCannon(Minecraft mc, SchematicWorld world,
+                                        Map<Item, Integer> needed, Map<Item, Integer> minY) {
+        MaterialChecklist checklist = new MaterialChecklist();
+        BlockPos anchor = world.anchor;
+        int unloaded = 0;
+        for (Map.Entry<BlockPos, BlockState> e : world.getBlockMap().entrySet()) {
+            BlockState schemState = BlockHelper.setZeroAge(e.getValue());
+            if (schemState == null) continue;
+            BlockPos rel = e.getKey();
+            BlockPos worldPos = anchor == null ? rel : rel.m_121955_(anchor);
+            if (!mc.f_91073_.m_46805_(worldPos)) {              // m_46805_ = isLoaded
+                unloaded++;                                      // cannon: shouldPlaceBlock -> false
+                continue;
+            }
+            BlockEntity schemBe = world.m_7702_(worldPos);      // getBlockEntity (schematic world)
+            ItemRequirement requirement = ItemRequirement.of(schemState, schemBe);
+            if (requirement.isEmpty() || requirement.isInvalid()) continue;
+            if (cannonIgnores(schemState)) continue;
+            BlockState worldState = mc.f_91073_.m_8055_(worldPos);  // getBlockState
+            if (worldState == schemState) continue;                  // exact state already in place
+            if (worldState.m_60800_(mc.f_91073_, worldPos) == -1.0F) continue;  // getDestroySpeed: bedrock
+            checklist.require(requirement);
+        }
+        world.getEntityStream().forEach(entity -> {
+            if (entity != null) checklist.require(ItemRequirement.of(entity));
+        });
+        drainChecklist(checklist, needed, minY);
+        if (unloaded > 0) {
+            say("加农炮比对: " + unloaded + " 个位置区块未加载，与加农炮一致未计入"
+                    + "（打印那部分前先让客户端加载该区域再按一次注入）");
+        }
+    }
+
+    /** The schematicannon's {@code shouldIgnoreBlockState} list, copied from its bytecode. */
+    private static boolean cannonIgnores(BlockState state) {
+        if (state.m_60734_() == Blocks.f_50454_) return true;                    // STRUCTURE_VOID
+        if (state.m_61138_(BlockStateProperties.f_61401_)                        // DOUBLE_BLOCK_HALF
+                && state.m_61143_(BlockStateProperties.f_61401_) == DoubleBlockHalf.UPPER) return true;
+        if (state.m_61138_(BlockStateProperties.f_61391_)                        // BED_PART
+                && state.m_61143_(BlockStateProperties.f_61391_) == BedPart.HEAD) return true;
+        if (state.m_60734_() instanceof PistonHeadBlock) return true;
+        return AllBlocks.BELT.has(state)
+                && state.m_61143_(BeltBlock.PART) == BeltPart.MIDDLE;
+    }
+
+    /** Moves a filled checklist into BII's material maps. DAMAGE items (glue) come along. */
+    private static void drainChecklist(MaterialChecklist checklist,
+                                       Map<Item, Integer> needed, Map<Item, Integer> minY) {
+        drainMap(checklist.required, needed, minY);
+        drainMap(checklist.damageRequired, needed, minY);
+    }
+
+    private static void drainMap(Object2IntMap<Item> src, Map<Item, Integer> needed, Map<Item, Integer> minY) {
+        for (Object2IntMap.Entry<Item> e : src.object2IntEntrySet()) {
+            Item item = e.getKey();
+            if (item == null || item == Items.f_41852_ || e.getIntValue() <= 0) continue;
+            needed.merge(item, e.getIntValue(), Integer::sum);
+            minY.merge(item, Integer.MAX_VALUE, Math::min);
+        }
+    }
+
     /** Counts the block materials inside an (inclusive) region of the world - the quill clipboard. */
     private static void countSelection(Minecraft mc, BlockPos min, BlockPos max,
                                        Map<Item, Integer> needed, Map<Item, Integer> minY) {
+        MaterialChecklist checklist = new MaterialChecklist();
         for (BlockPos pos : BlockPos.m_121940_(min, max)) {
             if (!mc.f_91073_.m_46805_(pos)) continue; // cannot know unloaded chunks
             BlockState state = mc.f_91073_.m_8055_(pos);
             if (state == null || state.m_60795_()) continue;
-            BackpackInjector.addMaterialFor(needed, minY, state, pos.m_123342_(), true);
+            checklist.require(ItemRequirement.of(state, mc.f_91073_.m_7702_(pos)));
         }
+        drainChecklist(checklist, needed, minY);
     }
 
     /**
-     * Materials for the entities a deployed blueprint carries. Create keeps Super Glue as an
-     * entity inside the structure file, so the cannon / clipboard material list asks for the glue
-     * item even though no block in the blueprint represents it.
+     * Counts the whole blueprint from the canonical structure NBT: the "blocks" list holds one
+     * entry per block whose "state" is an index into the palette. There is no deployment anchor,
+     * so nothing can be diffed against the world - Create's requirement rules still decide what
+     * each block costs.
      */
-    private static void countEntityMaterials(SchematicWorld schematicWorld,
-                                             Map<Item, Integer> needed, Map<Item, Integer> minY) {
-        try {
-            schematicWorld.getEntityStream().forEach(entity -> {
-                if (entity == null) return;
-                CompoundTag nbt = new CompoundTag();
-                try {
-                    entity.m_20223_(nbt);                       // saveWithoutId
-                    net.minecraft.resources.ResourceLocation id =
-                            net.minecraftforge.registries.ForgeRegistries.ENTITY_TYPES.getKey(entity.m_6095_());
-                    if (id != null) nbt.m_128359_("id", id.toString());
-                } catch (Throwable ignored) {
-                    // no id -> the rules simply find nothing to add
-                }
-                BackpackInjector.addEntityMaterialFor(needed, minY, nbt, Integer.MAX_VALUE);
-            });
-        } catch (Throwable ignored) {
-            // no entity data available for this blueprint
+    private static void countTotals(Minecraft mc, CompoundTag tag,
+                                    Map<Item, Integer> needed, Map<Item, Integer> minY) {
+        ListTag palette = paletteOf(tag);
+        if (palette == null || palette.size() == 0) return;
+        ListTag blocks = tag.m_128437_("blocks", TAG_COMPOUND);
+        int[] counts = new int[palette.size()];
+        for (int i = 0; i < blocks.size(); i++) {
+            int state = blocks.m_128728_(i).m_128451_("state");
+            if (state >= 0 && state < counts.length) counts[state]++;
         }
-    }
+        net.minecraft.core.HolderGetter<net.minecraft.world.level.block.Block> lookup =
+                mc.f_91073_.m_246945_(Registries.f_256747_);
+        MaterialChecklist checklist = new MaterialChecklist();
+        for (int i = 0; i < counts.length; i++) {
+            if (counts[i] <= 0) continue;
+            BlockState state;
+            try {
+                state = NbtUtils.m_247651_(lookup, palette.m_128728_(i));
+            } catch (Throwable t) {
+                continue;
+            }
+            if (state == null) continue;
+            ItemRequirement requirement = ItemRequirement.of(state, null);
+            if (requirement.isEmpty() || requirement.isInvalid()) continue;
+            for (int n = 0; n < counts[i]; n++) {
+                checklist.require(requirement);
+            }
+        }
 
-    /** Same missing criterion as the litematica based BII scan / the verifier. */
-    private static boolean isMissing(Minecraft mc, BlockPos worldPos, BlockState schemState) {        if (!mc.f_91073_.m_46805_(worldPos)) return true; // unloaded: count as missing
-        BlockState worldState = mc.f_91073_.m_8055_(worldPos);
-        return worldState.m_60795_() || worldState.m_247087_()
-                || (worldState.m_60734_() != schemState.m_60734_()
-                    && worldState.m_60734_() != BlockReplacer.resolveBlock(schemState.m_60734_()));
+        // Entities: Create keeps Super Glue (plus item frames / armor stands) in the structure's
+        // "entities" list and its material list asks for the matching item for each of them.
+        ListTag entities = tag.m_128437_("entities", TAG_COMPOUND);
+        for (int i = 0; i < entities.size(); i++) {
+            CompoundTag entityTag = entities.m_128728_(i);
+            if (entityTag == null || !entityTag.m_128441_("nbt")) continue;
+            BackpackInjector.addEntityMaterialFor(needed, minY, entityTag.m_128469_("nbt"), Integer.MAX_VALUE);
+        }
+        drainChecklist(checklist, needed, minY);
     }
 
     /**
@@ -369,46 +473,6 @@ public final class CreateBlueprintHelper {
         Vec3i size = template.m_163801_();
         if (size == null || size.equals(Vec3i.f_123288_)) return null; // file missing / empty
         return template.m_74618_(new CompoundTag());
-    }
-
-    /**
-     * Counts the whole blueprint from the canonical structure NBT: the "blocks" list holds one
-     * entry per block whose "state" is an index into the palette.
-     */
-    private static void countTotals(Minecraft mc, CompoundTag tag,
-                                    Map<Item, Integer> needed, Map<Item, Integer> minY) {
-        ListTag palette = paletteOf(tag);
-        if (palette == null || palette.size() == 0) return;
-        ListTag blocks = tag.m_128437_("blocks", TAG_COMPOUND);
-        int[] counts = new int[palette.size()];
-        for (int i = 0; i < blocks.size(); i++) {
-            int state = blocks.m_128728_(i).m_128451_("state");
-            if (state >= 0 && state < counts.length) counts[state]++;
-        }
-        net.minecraft.core.HolderGetter<net.minecraft.world.level.block.Block> lookup =
-                mc.f_91073_.m_246945_(Registries.f_256747_);
-        for (int i = 0; i < counts.length; i++) {
-            if (counts[i] <= 0) continue;
-            BlockState state;
-            try {
-                state = NbtUtils.m_247651_(lookup, palette.m_128728_(i));
-            } catch (Throwable t) {
-                continue;
-            }
-            if (state == null) continue;
-            for (int n = 0; n < counts[i]; n++) {
-                BackpackInjector.addMaterialFor(needed, minY, state, Integer.MAX_VALUE, true);
-            }
-        }
-
-        // Entities: Create keeps Super Glue (plus item frames / armor stands) in the structure's
-        // "entities" list and its material list asks for the matching item for each of them.
-        ListTag entities = tag.m_128437_("entities", TAG_COMPOUND);
-        for (int i = 0; i < entities.size(); i++) {
-            CompoundTag entityTag = entities.m_128728_(i);
-            if (entityTag == null || !entityTag.m_128441_("nbt")) continue;
-            BackpackInjector.addEntityMaterialFor(needed, minY, entityTag.m_128469_("nbt"), Integer.MAX_VALUE);
-        }
     }
 
     /** "palettes" array (first entry) with "palette" fallback - mirrors StructureTemplate.load. */
