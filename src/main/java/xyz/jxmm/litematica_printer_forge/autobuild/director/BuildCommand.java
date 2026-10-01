@@ -1,16 +1,22 @@
 package xyz.jxmm.litematica_printer_forge.autobuild.director;
 
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
 import fi.dy.masa.litematica.data.DataManager;
 import fi.dy.masa.litematica.schematic.placement.SchematicPlacement;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
-import net.minecraftforge.client.event.ClientChatEvent;
+import net.minecraftforge.client.event.RegisterClientCommandsEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import xyz.jxmm.litematica_printer_forge.autobuild.planner.AutoBuildPlanner;
@@ -21,17 +27,28 @@ import java.util.List;
 /**
  * Chat command handler for /autobuild (FR-25).
  *
- * Intercepts outgoing chat before it reaches the server. Recognizes:
- *   /autobuild          -> start build flow (with multi-schematic picker when needed)
- *   /autobuild pick N   -> choose schematic N from the pending list
- *   /autobuild cancel   -> abort picker
+ * <p><b>History / why this is a real client command.</b> This used to intercept
+ * {@code ClientChatEvent}, which never worked: in 1.20.1 {@code ChatScreen.handleChatInput} sends
+ * {@code /}-prefixed lines through {@code ClientPacketListener.sendCommand}, and Forge only posts
+ * {@code ClientChatEvent} from the plain-chat path ({@code ForgeHooksClient.onClientSendMessage}
+ * called by {@code sendChat}). {@code sendCommand} instead consults
+ * {@code net.minecraftforge.client.ClientCommandHandler.runCommand(String)} first and skips the
+ * packet when it returns {@code true} — so registering through
+ * {@link RegisterClientCommandsEvent} is the only way to get a client-only command. (Verified
+ * 2026-10-01: the old handler was dead code; the hotkey was the only working entry point.)
  *
- * When multiple enabled placements exist, prints a clickable chat list. Each
- * entry uses ClickEvent.RUN_COMMAND + HoverEvent.SHOW_TEXT for the summary.
- * The command never leaves the client; it is swallowed by the event handler.
+ * <pre>
+ *   /autobuild          start build flow (with multi-schematic picker when needed)
+ *   /autobuild pick N   choose schematic N from the pending list
+ *   /autobuild cancel   abort picker
+ * </pre>
+ *
+ * When multiple enabled placements exist, prints a clickable chat list. Each entry uses
+ * {@code ClickEvent.RUN_COMMAND} + {@code HoverEvent.SHOW_TEXT} for the summary. Every command
+ * stays on the client; nothing is forwarded to the server.
  */
 public final class BuildCommand {
-    private static final String PREFIX = "/autobuild";
+    private static final String NAME = "autobuild";
     private static List<SchematicPlacement> pendingChoices = null;
 
     private BuildCommand() {
@@ -42,30 +59,46 @@ public final class BuildCommand {
     }
 
     @SubscribeEvent
-    public void onClientChat(ClientChatEvent event) {
-        String msg = event.getMessage();
-        if (msg == null || !msg.startsWith(PREFIX)) {
-            return;
-        }
-        event.setCanceled(true);
+    public void onRegisterClientCommands(RegisterClientCommandsEvent event) {
+        CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
 
+        LiteralArgumentBuilder<CommandSourceStack> root = Commands.m_82127_(NAME);
+        root.executes(BuildCommand::runStart);
+        root.then(Commands.m_82127_("start").executes(BuildCommand::runStart));
+        root.then(Commands.m_82127_("cancel").executes(BuildCommand::runCancel));
+        root.then(Commands.m_82127_("pick")
+                .then(Commands.m_82129_("index", IntegerArgumentType.integer(0))
+                        .executes(BuildCommand::runPick)));
+
+        dispatcher.register(root);
+    }
+
+    private static int runStart(CommandContext<CommandSourceStack> ctx) {
         Minecraft mc = Minecraft.m_91087_();
-        if (mc.f_91074_ == null) {
-            return;
+        if (mc == null || mc.f_91074_ == null) {
+            return 0;
         }
-
-        String[] parts = msg.split("\\s+");
-        if (parts.length >= 2 && "pick".equalsIgnoreCase(parts[1])) {
-            handlePick(mc, parts);
-            return;
-        }
-        if (parts.length >= 2 && "cancel".equalsIgnoreCase(parts[1])) {
-            pendingChoices = null;
-            sendLocal(mc, text("[AutoBuild] Cancelled").m_130940_(ChatFormatting.GRAY));
-            return;
-        }
-
         startBuildFlow(mc);
+        return 1;
+    }
+
+    private static int runCancel(CommandContext<CommandSourceStack> ctx) {
+        Minecraft mc = Minecraft.m_91087_();
+        if (mc == null || mc.f_91074_ == null) {
+            return 0;
+        }
+        pendingChoices = null;
+        sendLocal(mc, text("[AutoBuild] Cancelled").m_130940_(ChatFormatting.GRAY));
+        return 1;
+    }
+
+    private static int runPick(CommandContext<CommandSourceStack> ctx) {
+        Minecraft mc = Minecraft.m_91087_();
+        if (mc == null || mc.f_91074_ == null) {
+            return 0;
+        }
+        int idx = IntegerArgumentType.getInteger(ctx, "index");
+        return handlePick(mc, idx) ? 1 : 0;
     }
 
     /**
@@ -105,31 +138,20 @@ public final class BuildCommand {
         sendLocal(mc, cancel);
     }
 
-    private static void handlePick(Minecraft mc, String[] parts) {
-        if (parts.length < 3) {
-            sendLocal(mc, text("[AutoBuild] Usage: /autobuild pick <index>").m_130940_(ChatFormatting.RED));
-            return;
-        }
-        int idx;
-        try {
-            idx = Integer.parseInt(parts[2]);
-        } catch (NumberFormatException e) {
-            sendLocal(mc, text("[AutoBuild] Invalid index: " + parts[2]).m_130940_(ChatFormatting.RED));
-            return;
-        }
-
+    private static boolean handlePick(Minecraft mc, int idx) {
         if (pendingChoices == null || pendingChoices.isEmpty()) {
             sendLocal(mc, text("[AutoBuild] No pending selection. Run /autobuild first.").m_130940_(ChatFormatting.RED));
-            return;
+            return false;
         }
         if (idx < 0 || idx >= pendingChoices.size()) {
             sendLocal(mc, text("[AutoBuild] Index out of range: " + idx).m_130940_(ChatFormatting.RED));
-            return;
+            return false;
         }
 
         SchematicPlacement chosen = pendingChoices.get(idx);
         pendingChoices = null;
         AutoBuildDirector.start(chosen);
+        return true;
     }
 
     private static MutableComponent buildEntryLine(Minecraft mc, SchematicPlacement p, int index) {
