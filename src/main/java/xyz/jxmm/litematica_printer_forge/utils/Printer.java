@@ -784,6 +784,14 @@ public class Printer {
                                 Direction facingSchematic;
                                 Block cBlock = stateClient.m_60734_();
                                 sBlock = stateSchematic.m_60734_();
+                                // Create integration: when the block type matches but the state differs,
+                                // a wrench click can rotate Create blocks (shaft/cogwheel axis, ...) into
+                                // the schematic state without breaking them. Falls through when Create
+                                // is absent, no wrench is owned, or no single click reaches the state.
+                                if (!ClearArea && CreateWrenchFix.tryWrench(stateSchematic, stateClient, pos, mc)) {
+                                    ++interact;
+                                    return InteractionResult.SUCCESS;
+                                }
                                 // Correct block type but a fundamentally wrong orientation/half (a stair facing the
                                 // wrong way, a slab placed on the top half instead of the bottom half, ...).
                                 // Right clicking cannot fix these, and unlike connection driven states
