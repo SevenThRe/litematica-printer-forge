@@ -371,6 +371,31 @@ public class BackpackInjector {
                 && stack.m_41720_().getClass().getName().contains("sophisticatedbackpacks.backpack.BackpackItem");
     }
 
+    /** Slot count of a backpack item's internal inventory, or -1 when it cannot be read. */
+    public static int backpackSlotCount(ItemStack backpackStack) {
+        net.p3pp3rf1y.sophisticatedcore.inventory.ITrackedContentsItemHandler handler = backpackHandler(backpackStack);
+        if (handler == null) return -1;
+        try {
+            return handler.getSlots();
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
+    private static net.p3pp3rf1y.sophisticatedcore.inventory.ITrackedContentsItemHandler backpackHandler(ItemStack backpackStack) {
+        try {
+            net.minecraftforge.common.capabilities.Capability<net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.IBackpackWrapper> cap =
+                    net.p3pp3rf1y.sophisticatedbackpacks.api.CapabilityBackpackWrapper.getCapabilityInstance();
+            net.minecraftforge.common.util.LazyOptional<net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.IBackpackWrapper> opt =
+                    backpackStack.getCapability(cap);
+            if (!opt.isPresent()) return null;
+            net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.IBackpackWrapper wrapper = opt.orElse(null);
+            return wrapper == null ? null : wrapper.getInventoryHandler();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     /**
      * Visits every stack stored inside a Sophisticated Backpack item through its capability,
      * so backpack contents can be inspected without opening the backpack GUI. Fails silently
@@ -379,14 +404,7 @@ public class BackpackInjector {
     public static void forEachBackpackStack(ItemStack backpackStack,
                                             java.util.function.BiConsumer<Integer, ItemStack> visitor) {
         try {
-            net.minecraftforge.common.capabilities.Capability<net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.IBackpackWrapper> cap =
-                    net.p3pp3rf1y.sophisticatedbackpacks.api.CapabilityBackpackWrapper.getCapabilityInstance();
-            net.minecraftforge.common.util.LazyOptional<net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.IBackpackWrapper> opt =
-                    backpackStack.getCapability(cap);
-            if (!opt.isPresent()) return;
-            net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.IBackpackWrapper wrapper = opt.orElse(null);
-            if (wrapper == null) return;
-            net.p3pp3rf1y.sophisticatedcore.inventory.ITrackedContentsItemHandler handler = wrapper.getInventoryHandler();
+            net.p3pp3rf1y.sophisticatedcore.inventory.ITrackedContentsItemHandler handler = backpackHandler(backpackStack);
             if (handler == null) return;
             int slots = handler.getSlots();
             for (int s = 0; s < slots; s++) {

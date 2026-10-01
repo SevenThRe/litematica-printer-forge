@@ -56,51 +56,133 @@ public final class CreateBlueprintHelper {
 
     // ===== discovery =====
 
+    private static final int DIAG_MAX = 6;
+
     /** Every Create material source carried by the player (inventory + open GUI + backpacks, then the quill clipboard). */
     public static List<BlueprintEntry> collectBlueprints(Minecraft mc) {
         List<BlueprintEntry> out = new ArrayList<>();
         if (mc == null || mc.f_91074_ == null) return out;
+        boolean dbg = LitematicaMixinMod.DEBUG_MESSAGE.getBooleanValue();
         // dedupe: the same blueprint can sit in the player inventory AND in the open
         // container menu (every menu repeats the player inventory slots) or in a backpack
         java.util.Set<String> seen = new java.util.HashSet<>();
 
+        // ---- 1) player inventory (main slots + armor + offhand through the Container API) ----
         Inventory inv = mc.f_91074_.m_150109_();
         int size = inv.m_6643_();
+        int invNonEmpty = 0;
+        int invCount = 0;
+        StringBuilder invProbe = new StringBuilder();
+        int[] invProbeN = {0};
         for (int i = 0; i < size; i++) {
             ItemStack st = inv.m_8020_(i);
-            if (isBlueprint(st)) addEntry(out, seen, entryOf(st, "物品栏"));
+            if (st == null || st.m_41619_()) continue;
+            invNonEmpty++;
+            probe(invProbe, invProbeN, i, st);
+            if (isBlueprint(st) && addEntry(out, seen, entryOf(st, "物品栏#" + i))) invCount++;
+        }
+        if (dbg) {
+            say("蓝图扫描1/3 物品栏(无界面) " + size + "格 非空" + invNonEmpty
+                    + " 蓝图" + invCount + " | 含schematic类:" + text(invProbe));
         }
 
-        int invCount = out.size();
+        // ---- 2) the currently open container menu (schematicannon / schematic table / backpack GUI) ----
         int menuCount = 0;
         net.minecraft.world.inventory.AbstractContainerMenu openMenu = mc.f_91074_.f_36096_;
+        StringBuilder menuProbe = new StringBuilder();
+        int[] menuProbeN = {0};
+        int menuNonEmpty = 0;
+        int menuSlots = 0;
+        boolean menuIsSelf = false;
         if (openMenu != null) {
-            for (int i = 0; i < openMenu.f_38839_.size(); i++) {
-                ItemStack st = openMenu.f_38839_.get(i).m_7993_();
-                if (isBlueprint(st)) {
+            menuSlots = openMenu.f_38839_.size();
+            for (int i = 0; i < menuSlots; i++) {
+                net.minecraft.world.inventory.Slot slot = openMenu.f_38839_.get(i);
+                ItemStack st = slot.m_7993_();
+                // a menu always repeats the player inventory: label those correctly instead of
+                // pretending they came out of the container.
+                boolean fromPlayer = slot.f_40218_ == inv;
+                if (fromPlayer) menuIsSelf = true;
+                if (st == null || st.m_41619_()) continue;
+                menuNonEmpty++;
+                probe(menuProbe, menuProbeN, i, st);
+                if (isBlueprint(st) && addEntry(out, seen, entryOf(st, (fromPlayer ? "物品栏(界面)#" : "容器#") + i))) {
                     menuCount++;
-                    addEntry(out, seen, entryOf(st, "容器"));
                 }
             }
         }
+        if (dbg) {
+            say("蓝图扫描2/3 界面 " + (openMenu == null ? "无" : openMenu.getClass().getSimpleName()
+                    + " " + menuSlots + "格 非空" + menuNonEmpty + " 含玩家物品栏=" + menuIsSelf)
+                    + " 蓝图(新增)" + menuCount + " | 含schematic类:" + text(menuProbe));
+        }
 
+        // ---- 3) backpacks carried in the inventory (read through the capability, UI not needed) ----
+        int bagCount = 0;
+        int bagsSeen = 0;
+        int bagSlots = 0;
         for (int i = 0; i < size; i++) {
             ItemStack bag = inv.m_8020_(i);
             if (bag.m_41619_() || !BackpackInjector.isBackpackStack(bag)) continue;
+            bagsSeen++;
+            bagSlots += BackpackInjector.backpackSlotCount(bag);
             BackpackInjector.forEachBackpackStack(bag, (slot, st) -> {
-                if (isBlueprint(st)) addEntry(out, seen, entryOf(st, "背包"));
+                if (isBlueprint(st)) addEntry(out, seen, entryOf(st, "背包#" + slot));
             });
         }
-        int bagCount = out.size() - invCount - menuCount;
+        bagCount = out.size() - invCount - menuCount;
+        if (dbg) {
+            say("蓝图扫描3/3 背包物品" + bagsSeen + "个 内部槽" + bagSlots + " 蓝图(新增)" + Math.max(bagCount, 0));
+        }
 
         if (out.isEmpty()) addQuillSelection(mc, out);
 
-        if (LitematicaMixinMod.DEBUG_MESSAGE.getBooleanValue()) {
-            MessageHolder.sendMessageUnchecked("[BII-DEBUG] 蓝图扫描: 物品栏" + invCount
-                    + " 容器" + menuCount + " 背包" + bagCount + " 笔选区" + quillCount(out)
-                    + " → 共" + out.size() + "个来源");
+        if (dbg) {
+            for (int k = 0; k < out.size(); k++) {
+                say("  #" + (k + 1) + " " + out.get(k).name + " ← " + out.get(k).detail);
+            }
+            say("蓝图扫描合计: 物品栏" + invCount + " 界面" + menuCount + " 背包" + Math.max(bagCount, 0)
+                    + " 笔选区" + quillCount(out) + " → 共" + out.size() + "个来源");
         }
         return out;
+    }
+
+    /** Collects {@code index=itemId} for items that look like a Create blueprint/quill/clipboard. */
+    private static void probe(StringBuilder sb, int[] n, int index, ItemStack st) {
+        if (!looksSchematic(st)) return;
+        if (n[0] >= DIAG_MAX) {
+            if (sb.length() > 0 && sb.charAt(sb.length() - 1) != '…') sb.append(" …");
+            return;
+        }
+        if (sb.length() > 0) sb.append(' ');
+        sb.append(index).append('=').append(itemId(st));
+        n[0]++;
+    }
+
+    private static String text(StringBuilder sb) {
+        return sb.length() == 0 ? "无" : sb.toString();
+    }
+
+    private static boolean looksSchematic(ItemStack st) {
+        if (st == null || st.m_41619_()) return false;
+        String cls = st.m_41720_().getClass().getName().toLowerCase();
+        if (cls.contains("schematic") || cls.contains("clipboard")) return true;
+        String id = itemId(st).toLowerCase();
+        return id.contains("schematic") || id.contains("clipboard") || id.contains("blueprint");
+    }
+
+    private static String itemId(ItemStack st) {
+        try {
+            net.minecraft.resources.ResourceLocation rl =
+                    net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(st.m_41720_());
+            return rl == null ? st.m_41720_().getClass().getSimpleName() : rl.toString();
+        } catch (Throwable t) {
+            return st.m_41720_().getClass().getSimpleName();
+        }
+    }
+
+    private static void say(String msg) {
+        MessageHolder.sendMessageUnchecked("[BII-DEBUG] " + msg);
     }
 
     private static int quillCount(List<BlueprintEntry> out) {
