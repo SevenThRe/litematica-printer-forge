@@ -22,3 +22,9 @@ bin/
 .tmp_classpath.jar
 build_err.txt
 javac_err.txt
+
+# 免 Gradle 编译流水线的临时产物
+build_*.txt
+build_errors/
+push_err.txt
+_hold_v1192/
