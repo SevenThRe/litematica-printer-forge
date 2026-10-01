@@ -18,6 +18,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
+import xyz.jxmm.litematica_printer_forge.LitematicaMixinMod;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -55,25 +56,66 @@ public final class CreateBlueprintHelper {
 
     // ===== discovery =====
 
-    /** Every Create material source carried by the player (inventory + backpacks, then the quill clipboard). */
+    /** Every Create material source carried by the player (inventory + open GUI + backpacks, then the quill clipboard). */
     public static List<BlueprintEntry> collectBlueprints(Minecraft mc) {
         List<BlueprintEntry> out = new ArrayList<>();
         if (mc == null || mc.f_91074_ == null) return out;
+        // dedupe: the same blueprint can sit in the player inventory AND in the open
+        // container menu (every menu repeats the player inventory slots) or in a backpack
+        java.util.Set<String> seen = new java.util.HashSet<>();
+
         Inventory inv = mc.f_91074_.m_150109_();
         int size = inv.m_6643_();
         for (int i = 0; i < size; i++) {
             ItemStack st = inv.m_8020_(i);
-            if (isBlueprint(st)) out.add(entryOf(st, "物品栏"));
+            if (isBlueprint(st)) addEntry(out, seen, entryOf(st, "物品栏"));
         }
+
+        int invCount = out.size();
+        int menuCount = 0;
+        net.minecraft.world.inventory.AbstractContainerMenu openMenu = mc.f_91074_.f_36096_;
+        if (openMenu != null) {
+            for (int i = 0; i < openMenu.f_38839_.size(); i++) {
+                ItemStack st = openMenu.f_38839_.get(i).m_7993_();
+                if (isBlueprint(st)) {
+                    menuCount++;
+                    addEntry(out, seen, entryOf(st, "容器"));
+                }
+            }
+        }
+
         for (int i = 0; i < size; i++) {
             ItemStack bag = inv.m_8020_(i);
             if (bag.m_41619_() || !BackpackInjector.isBackpackStack(bag)) continue;
             BackpackInjector.forEachBackpackStack(bag, (slot, st) -> {
-                if (isBlueprint(st)) out.add(entryOf(st, "背包"));
+                if (isBlueprint(st)) addEntry(out, seen, entryOf(st, "背包"));
             });
         }
+        int bagCount = out.size() - invCount - menuCount;
+
         if (out.isEmpty()) addQuillSelection(mc, out);
+
+        if (LitematicaMixinMod.DEBUG_MESSAGE.getBooleanValue()) {
+            MessageHolder.sendMessageUnchecked("[BII-DEBUG] 蓝图扫描: 物品栏" + invCount
+                    + " 容器" + menuCount + " 背包" + bagCount + " 笔选区" + quillCount(out)
+                    + " → 共" + out.size() + "个来源");
+        }
         return out;
+    }
+
+    private static int quillCount(List<BlueprintEntry> out) {
+        int n = 0;
+        for (BlueprintEntry e : out) if (e.isSelection()) n++;
+        return n;
+    }
+
+    /** Dedupes by the blueprint's structure file (falls back to the display name). */
+    private static boolean addEntry(List<BlueprintEntry> out, java.util.Set<String> seen, BlueprintEntry e) {
+        String key = e.stack.m_41783_() != null && e.stack.m_41783_().m_128441_("File")
+                ? e.stack.m_41783_().m_128461_("File") : e.name;
+        if (!seen.add(key)) return false;
+        out.add(e);
+        return true;
     }
 
     /**

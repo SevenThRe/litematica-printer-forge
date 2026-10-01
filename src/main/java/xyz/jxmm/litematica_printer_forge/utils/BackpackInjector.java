@@ -124,7 +124,7 @@ public class BackpackInjector {
         }
         List<SchematicPlacement> allPlacements = DataManager.getSchematicPlacementManager().getAllSchematicsPlacements();
         if (allPlacements == null || allPlacements.isEmpty()) {
-            MessageHolder.sendMessageUnchecked("[BII] 未选择原理图");
+            MessageHolder.sendMessageUnchecked("[BII] 未找到材料来源（物品栏/容器/背包里没有 Create 蓝图，也没有选中的原理图）");
             return;
         }
         List<SchematicPlacement> enabled = new ArrayList<>();
@@ -134,7 +134,7 @@ public class BackpackInjector {
             }
         }
         if (enabled.isEmpty()) {
-            MessageHolder.sendMessageUnchecked("[BII] 没有启用的原理图");
+            MessageHolder.sendMessageUnchecked("[BII] 未找到材料来源（物品栏/容器/背包里没有 Create 蓝图，也没有启用的原理图）");
             return;
         }
         if (enabled.size() == 1) {
