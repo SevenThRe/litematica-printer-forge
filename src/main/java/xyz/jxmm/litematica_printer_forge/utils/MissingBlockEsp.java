@@ -277,10 +277,12 @@ public class MissingBlockEsp {
             return;
         }
         boolean verifyMode = LitematicaMixinMod.ESP_VERIFICATION_MODE.getBooleanValue();
+        boolean byInventory = LitematicaMixinMod.ESP_HIGHLIGHT_BY_INVENTORY.getBooleanValue();
         Set<Item> heldFilter = null;
+        boolean showMissingMaterial = false;
         if (!verifyMode) {
             heldFilter = new HashSet<>();
-            if (LitematicaMixinMod.ESP_HIGHLIGHT_BY_INVENTORY.getBooleanValue()) {
+            if (byInventory) {
                 // Highlight by the set of items in the player inventory (the printer auto-swaps the held item, so held-item highlighting flickers; the inventory set is stable)
                 net.minecraft.world.entity.player.Inventory inv = mc.f_91074_.m_150109_();
                 for (int i = 0; i < inv.m_6643_(); i++) {
@@ -289,6 +291,10 @@ public class MissingBlockEsp {
                         heldFilter.add(st.m_41720_());
                     }
                 }
+                // Positions whose material is NOT in the inventory (e.g. the missing beds) are still
+                // shown, but in the missing color, instead of being hidden entirely - otherwise the
+                // one thing the player is actually short of is exactly what they cannot locate.
+                showMissingMaterial = true;
             } else {
                 ItemStack mainHand = mc.f_91074_.m_21205_();
                 if (mainHand.m_41720_() instanceof BlockItem) {
@@ -299,16 +305,9 @@ public class MissingBlockEsp {
                     heldFilter.add(offHand.m_41720_());
                 }
             }
-            if (heldFilter.isEmpty()) {
-                return;
-            }
         }
-        int color = verifyMode ? LitematicaMixinMod.ESP_MISSING_COLOR.getIntegerValue()
-                : LitematicaMixinMod.ESP_HELD_COLOR.getIntegerValue();
-        int r = (color >> 16) & 0xFF;
-        int g = (color >> 8) & 0xFF;
-        int b = color & 0xFF;
-        int a = color >>> 24;
+        int heldColor = LitematicaMixinMod.ESP_HELD_COLOR.getIntegerValue();
+        int missingColor = LitematicaMixinMod.ESP_MISSING_COLOR.getIntegerValue();
         PoseStack poseStack = event.getPoseStack();
         Vec3 cam = mc.f_91063_.m_109153_().m_90583_();
         Level world = mc.f_91073_;
@@ -324,24 +323,32 @@ public class MissingBlockEsp {
         BufferBuilder buffer = tesselator.m_85915_();
         buffer.m_166779_(VertexFormat.Mode.QUADS, DefaultVertexFormat.f_85815_);
         for (MissingEntry entry : entries) {
-            if (heldFilter != null && !heldFilter.contains(entry.item)) continue;
+            boolean held = heldFilter != null && heldFilter.contains(entry.item);
+            if (heldFilter != null && !held && !showMissingMaterial) continue;
             // Real-time check: if the block is already correct (original or replaced) in a loaded chunk, skip immediately without waiting for the next scan round
             if (world.m_46805_(entry.pos)) {
                 Block wb = world.m_8055_(entry.pos).m_60734_();
                 if (wb == entry.block || wb == entry.expected) continue;
             }
+            int color = held ? heldColor : missingColor;
+            int r = (color >> 16) & 0xFF;
+            int g = (color >> 8) & 0xFF;
+            int b = color & 0xFF;
+            int a = color >>> 24;
             addBoxQuads(buffer, matrix, entry.pos, r, g, b, a);
         }
         tesselator.m_85914_();
         RenderSystem.lineWidth(1.5F);
         buffer.m_166779_(VertexFormat.Mode.DEBUG_LINES, DefaultVertexFormat.f_85815_);
         for (MissingEntry entry : entries) {
-            if (heldFilter != null && !heldFilter.contains(entry.item)) continue;
+            boolean held = heldFilter != null && heldFilter.contains(entry.item);
+            if (heldFilter != null && !held && !showMissingMaterial) continue;
             if (world.m_46805_(entry.pos)) {
                 Block wb = world.m_8055_(entry.pos).m_60734_();
                 if (wb == entry.block || wb == entry.expected) continue;
             }
-            addBoxEdges(buffer, matrix, entry.pos, r, g, b, 255);
+            int color = held ? heldColor : missingColor;
+            addBoxEdges(buffer, matrix, entry.pos, (color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF, 255);
         }
         tesselator.m_85914_();
         RenderSystem.enableCull();
