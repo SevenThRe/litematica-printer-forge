@@ -63,6 +63,20 @@ import xyz.jxmm.litematica_printer_forge.utils.BlockReplacer;
  * /fill cannot carry per-block data (the same tag would land on every block), so any position that
  * has block entity data in the schematic is placed with /setblock instead.
  *
+ * <p><b>Bad blocks are skipped, not fatal.</b> A blueprint can name a block the server does not
+ * have (a missing mod), or carry data that will not fit in a 256 character command. One such
+ * position used to abort the whole job. Now a refused or unbuildable command is counted, the block
+ * id is remembered for the closing report, and the job carries on; only a run of
+ * {@link #MAX_CONSECUTIVE_REFUSED} refusals in a row - which is what a revoked permission looks
+ * like, since it fails every single command - stops it. Positions that stay missing for
+ * {@link #STUBBORN_AFTER_ROUNDS} verify rounds are dropped from the retry set outright.
+ *
+ * <p><b>Command feedback is muted for the duration of the job.</b> Every /fill answers with its own
+ * chat line ("已成功填充2个方块" / "Successfully filled 2 block(s)"). Measured on 2026-10-01: 15067
+ * commands produced 27032 chat lines, grew latest.log to 13 MB, and halved the achievable command
+ * rate to 49.5/s because the render thread had to render and log all of them. See
+ * {@link #muteCommandFeedback}.
+ *
  * <p>Entities are deliberately not handled yet: super glue, item frames and armour stands live in
  * the schematic's entity list, and rotating them correctly needs litematica's own
  * {@code EntityUtils} paste path. Blocks with block entity data already cover the bulk of the work.
@@ -86,6 +100,19 @@ public final class FastBuildJob {
     /** Singleplayer moves no packets, so the same budget goes much further. */
     private static final int SINGLEPLAYER_MULTIPLIER = 4;
     private static final int HUD_INTERVAL = 10;
+    /**
+     * How many sends may be refused back to back before the job gives up. A revoked permission
+     * refuses every command and blows through this inside a single tick; one unbuildable block
+     * refuses once, is counted, and the next command succeeds and resets the counter.
+     */
+    private static final int MAX_CONSECUTIVE_REFUSED = 8;
+    /**
+     * Verify rounds a position may still be missing before it is dropped from the retry set. Two,
+     * because the first round can legitimately lose a command to a dropped packet.
+     */
+    private static final int STUBBORN_AFTER_ROUNDS = 2;
+    /** How many distinct block ids the closing skip report names. */
+    private static final int REPORT_TOP_N = 5;
 
     // ---------------------------------------------------------------- scan state
 
@@ -147,13 +174,34 @@ public final class FastBuildJob {
         int blocksCovered;
         int nbtDropped;
         int commandsSkipped;
+        int skippedStubborn;
         int rounds;
         int remaining;
+        /** Block id -> how many positions of it we gave up on. */
+        final LinkedHashMap<String, Integer> skippedKinds = new LinkedHashMap<>();
 
         String summary() {
             return "fills=" + fillsSent + " setblocks=" + setsSent + " blocks=" + blocksCovered
                     + " nbtDropped=" + nbtDropped + " skipped=" + commandsSkipped
+                    + " stubborn=" + skippedStubborn
                     + " unloaded=" + unloadedSkipped + " remaining=" + remaining;
+        }
+
+        /** " skipped blocks: minecraft:oak_stairs x12 ...", or "" when nothing was skipped. */
+        String skippedReport() {
+            if (skippedKinds.isEmpty()) {
+                return "";
+            }
+            StringBuilder sb = new StringBuilder(" skipped blocks:");
+            int shown = 0;
+            for (Map.Entry<String, Integer> e : skippedKinds.entrySet()) {
+                if (shown++ >= REPORT_TOP_N) {
+                    sb.append(" ...");
+                    break;
+                }
+                sb.append(' ').append(e.getKey()).append(" x").append(e.getValue());
+            }
+            return sb.toString();
         }
     }
 
@@ -173,6 +221,16 @@ public final class FastBuildJob {
     private static int round;
     private static int maxBox;
     private static int safeModeCooldown;
+    /** Refused sends in a row; any success resets it. */
+    private static int consecutiveRefused;
+    /** Refusals seen during the current round - the only evidence that maxBox is too large. */
+    private static int refusedThisRound;
+    /** World positions that failed a verify round, and how many rounds they have failed. */
+    private static final HashMap<Long, Integer> stubborn = new HashMap<>();
+    /** Why the most recent emit() could not build a command, when CommandSender was never reached. */
+    private static String lastEmitError = null;
+    /** True while sendCommandFeedback is switched off for the duration of this job. */
+    private static boolean feedbackMuted;
 
     private static final HashMap<Long, BlockState> missing = new HashMap<>();
     private static final HashMap<Long, CompoundTag> missingNbt = new HashMap<>();
@@ -260,15 +318,20 @@ public final class FastBuildJob {
         chunkOrder.clear();
         fillQueue.clear();
         setQueue.clear();
+        stubborn.clear();
         scanBudget = 0;
         decomposeBudget = 0;
         settleTicks = 0;
         hudTicks = 0;
         safeModeCooldown = 0;
+        consecutiveRefused = 0;
+        refusedThisRound = 0;
+        lastEmitError = null;
         stage = Stage.SCAN;
 
         LitematicaMixinMod.LOGGER.info("[FASTBUILD] start: regions=" + regions.size()
                 + " permission=" + OpGate.describe(mc) + " maxBox=" + maxBox);
+        muteCommandFeedback(mc);
         say(mc, "started: " + regions.size() + " region(s), " + OpGate.describe(mc), false);
         return true;
     }
@@ -277,6 +340,7 @@ public final class FastBuildJob {
         if (stage != Stage.IDLE) {
             LitematicaMixinMod.LOGGER.info("[FASTBUILD] stop at stage " + stage + " " + stats.summary());
         }
+        restoreCommandFeedback(mc);
         stage = Stage.IDLE;
         regions.clear();
         missing.clear();
@@ -285,6 +349,7 @@ public final class FastBuildJob {
         chunkOrder.clear();
         fillQueue.clear();
         setQueue.clear();
+        stubborn.clear();
         boundLevel = null;
         if (notify && mc != null) {
             say(mc, "stopped", false);
@@ -361,7 +426,7 @@ public final class FastBuildJob {
     }
 
     public static String report() {
-        return stats.summary();
+        return stats.summary() + stats.skippedReport();
     }
 
     // ---------------------------------------------------------------- stage: scan
@@ -541,6 +606,11 @@ public final class FastBuildJob {
      * the box as soon as the state changes, the column ends or the per command block budget is hit.
      * Positions that carry block entity data never join a box - /fill would smear one tag over the
      * whole region - so they are emitted as individual /setblock commands.
+     *
+     * <p>Boxes come out small on decorated builds, and that is not a bug: {@link #same} demands
+     * reference equality of the BlockState, and fences, walls, panes and stairs all encode their
+     * connections in the state, so neighbouring fence posts are genuinely different states. The
+     * measured average on a shell type build was 1.99 blocks per command.
      */
     private static void decomposeChunk(ArrayList<Long> positions) {
         HashMap<Long, BlockState> cells = new HashMap<>(positions.size() * 2);
@@ -696,70 +766,80 @@ public final class FastBuildJob {
             }
         }
 
-        boolean sent = false;
-        while (fillBudget > 0 && !fillQueue.isEmpty()) {
-            Op op = fillQueue.poll();
-            if (emit(mc, op)) {
-                stats.fillsSent++;
-                stats.blocksCovered += op.volume();
-                sent = true;
-            } else {
-                stats.commandsSkipped++;
-                if (abortIfRefused(mc)) {
-                    return;
-                }
-            }
+        while (fillBudget > 0 && !fillQueue.isEmpty() && !aborted) {
+            dispatch(mc, fillQueue.poll(), true);
             fillBudget--;
         }
-        while (setBudget > 0 && !setQueue.isEmpty()) {
-            Op op = setQueue.poll();
-            if (emit(mc, op)) {
-                stats.setsSent++;
-                stats.blocksCovered++;
-                sent = true;
-            } else {
-                stats.commandsSkipped++;
-                if (abortIfRefused(mc)) {
-                    return;
-                }
-            }
+        while (setBudget > 0 && !setQueue.isEmpty() && !aborted) {
+            dispatch(mc, setQueue.poll(), false);
             setBudget--;
         }
 
         if (fillQueue.isEmpty() && setQueue.isEmpty()) {
             stage = Stage.SETTLE;
             settleTicks = SETTLE_TICKS;
-        } else if (!sent) {
-            // nothing went out this tick - don't spin forever on a stuck queue
-            stats.commandsSkipped++;
         }
     }
 
     /**
-     * A refused send is a hard verdict: {@code CommandSender} refuses exactly when the client
-     * command tree (which is the server's own tree) would reject the command, so retrying or
-     * spraying more packets cannot help. Bail out instead of spinning on a stuck queue.
+     * Sends one command and books the outcome. A refusal is charged to this round - which is the
+     * only real evidence that {@code maxBox} sits above the server's
+     * {@code commandModificationBlockLimit} - and to the consecutive counter. The job is only torn
+     * down when refusals pile up (a revoked permission fails everything) or an unbuildable command
+     * appears with skip-invalid turned off, so a single bad block is skipped and the build
+     * continues.
      */
-    private static boolean abortIfRefused(Minecraft mc) {
-        String reason = CommandSender.lastReject;
-        if (reason == null) {
-            return false;
+    private static void dispatch(Minecraft mc, Op op, boolean fill) {
+        if (emit(mc, op)) {
+            consecutiveRefused = 0;
+            if (fill) {
+                stats.fillsSent++;
+                stats.blocksCovered += op.volume();
+            } else {
+                stats.setsSent++;
+                stats.blocksCovered++;
+            }
+            return;
         }
+
+        stats.commandsSkipped++;
+        refusedThisRound++;
+        consecutiveRefused++;
+        recordSkippedState(op.state);
+
+        String why = CommandSender.lastReject != null ? CommandSender.lastReject : lastEmitError;
+        boolean hardStop = CommandSender.lastRejectKind == CommandSender.RejectKind.FATAL
+                || consecutiveRefused >= MAX_CONSECUTIVE_REFUSED
+                || (CommandSender.lastReject == null
+                        && !LitematicaMixinMod.FAST_BUILD_SKIP_INVALID.getBooleanValue());
+        if (hardStop) {
+            abortJob(mc, why);
+        }
+    }
+
+    /**
+     * A refused send is by itself not fatal: an unknown block is refused exactly like a missing
+     * permission. Only a run of them means the permission is gone, so {@link #dispatch} waits for
+     * {@link #MAX_CONSECUTIVE_REFUSED} before calling in here.
+     */
+    private static void abortJob(Minecraft mc, String why) {
         stop(mc, false);
         aborted = true;
-        abortReason = reason;
-        say(mc, "aborted: " + reason, false);
-        return true;
+        abortReason = why == null ? "unknown" : why;
+        say(mc, "aborted after " + consecutiveRefused + " refused command(s): " + abortReason, false);
     }
 
     private static boolean emit(Minecraft mc, Op op) {
+        lastEmitError = null;
         String stateText;
         try {
             stateText = BlockStateParser.m_116769_(op.state);
         } catch (Throwable t) {
+            lastEmitError = "cannot serialise " + op.state + ": " + t;
             return false;
         }
         if (stateText == null || stateText.isEmpty()) {
+            lastEmitError = "cannot serialise " + op.state;
             return false;
         }
         if (op.fill) {
@@ -778,6 +858,7 @@ public final class FastBuildJob {
             command = CommandSender.setblock(op.x1, op.y1, op.z1, stateText, null);
         }
         if (command.length() > CommandSender.SAFE_LIMIT) {
+            lastEmitError = "setblock command is " + command.length() + " chars even without NBT";
             return false;
         }
         return CommandSender.send(mc, command);
@@ -796,32 +877,112 @@ public final class FastBuildJob {
         }
     }
 
+    /**
+     * Remembers which block id we could not place, so the closing report can name it. The id comes
+     * from the same serialiser the commands use, with the property list chopped off - going through
+     * the block registry instead would need the SRG name for {@code BuiltInRegistries.BLOCK}, which
+     * is not worth chasing for a diagnostic string.
+     */
+    private static void recordSkippedState(BlockState state) {
+        if (state == null) {
+            return;
+        }
+        String id = null;
+        try {
+            id = BlockStateParser.m_116769_(state);
+        } catch (Throwable ignored) {
+        }
+        if (id == null || id.isEmpty()) {
+            id = String.valueOf(state);
+        } else {
+            int cut = id.indexOf('[');
+            if (cut > 0) {
+                id = id.substring(0, cut);
+            }
+        }
+        stats.skippedKinds.merge(id, 1, Integer::sum);
+    }
+
+    // ---------------------------------------------------------------- command feedback
+
+    /**
+     * Silences the server's command feedback for the duration of the job.
+     *
+     * <p>Every accepted /fill answers the sender with "已成功填充N个方块" (or the English equivalent)
+     * as a system chat message. On a decorated build one command covers barely two blocks, so a
+     * single build can produce tens of thousands of them: measured 2026-10-01, 15067 commands made
+     * 27032 chat lines, pushed latest.log to 13 MB, and the render thread fell far enough behind
+     * that only 49.5 commands/s went out against the 100/s the config asked for. Turning the
+     * gamerule off stops the packet at the source, which helps the server as much as the client.
+     *
+     * <p>The value is restored by {@link #restoreCommandFeedback} on completion or abort. If the
+     * game dies mid build it stays off; {@code /gamerule sendCommandFeedback true} puts it back.
+     */
+    private static void muteCommandFeedback(Minecraft mc) {
+        if (!LitematicaMixinMod.FAST_BUILD_MUTE_FEEDBACK.getBooleanValue() || feedbackMuted) {
+            return;
+        }
+        feedbackMuted = true;
+        CommandSender.send(mc, "gamerule sendCommandFeedback false");
+        say(mc, "command feedback muted for this run", false);
+    }
+
+    private static void restoreCommandFeedback(Minecraft mc) {
+        if (!feedbackMuted) {
+            return;
+        }
+        feedbackMuted = false;
+        if (mc != null) {
+            CommandSender.send(mc, "gamerule sendCommandFeedback true");
+        }
+    }
+
+    /** True while the job has sendCommandFeedback switched off; used by the chat filter. */
+    public static boolean isFeedbackMuted() {
+        return feedbackMuted;
+    }
+
     // ---------------------------------------------------------------- stage: verify
 
     private static void stepVerify(Minecraft mc) {
         Level world = mc.f_91073_;
         int stillMissing = 0;
         int cleared = 0;
+        int abandoned = 0;
+        boolean skipStubborn = LitematicaMixinMod.FAST_BUILD_SKIP_STUBBORN.getBooleanValue();
         Iterator<Map.Entry<Long, BlockState>> it = missing.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<Long, BlockState> entry = it.next();
             long key = entry.getKey();
             BlockPos pos = new BlockPos(px(key), py(key), pz(key));
             if (!world.m_46805_(pos)) {
+                // not loaded yet - not the build's fault, do not charge it a round
                 stillMissing++;
                 continue;
             }
             if (alreadyPlaced(entry.getValue(), world.m_8055_(pos))) {
                 it.remove();
                 missingNbt.remove(key);
+                stubborn.remove(key);
                 cleared++;
-            } else {
-                stillMissing++;
+                continue;
             }
+            int failedRounds = stubborn.merge(key, 1, Integer::sum);
+            if (skipStubborn && failedRounds >= STUBBORN_AFTER_ROUNDS) {
+                // Two rounds and the world still refuses it: a block the server does not know, or
+                // a spot something else keeps reverting. Retrying forever only wastes packets.
+                it.remove();
+                missingNbt.remove(key);
+                recordSkippedState(entry.getValue());
+                stats.skippedStubborn++;
+                abandoned++;
+                continue;
+            }
+            stillMissing++;
         }
         stats.remaining = stillMissing;
         LitematicaMixinMod.LOGGER.info("[FASTBUILD] round " + round + " verified: cleared=" + cleared
-                + " stillMissing=" + stillMissing + " " + stats.summary());
+                + " abandoned=" + abandoned + " stillMissing=" + stillMissing + " " + stats.summary());
 
         if (stillMissing == 0) {
             finish(mc, "done - " + stats.summary());
@@ -836,19 +997,23 @@ public final class FastBuildJob {
         }
         round++;
         stats.rounds = round;
-        // Something was refused - the usual cause is the server's commandModificationBlockLimit
-        // gamerule being lower than our per command cap, so halve the box budget and try again.
-        if (maxBox > 256) {
+        // Only a genuine refusal means the server's commandModificationBlockLimit sits below our
+        // per command cap. Leftovers on their own mean nothing - on decorated builds the average
+        // box is two blocks and can never reach the cap - so do not shrink the budget for them.
+        if (refusedThisRound > 0 && maxBox > 256) {
             maxBox = Math.max(256, maxBox / 2);
-            LitematicaMixinMod.LOGGER.info("[FASTBUILD] shrinking per command block budget to " + maxBox);
+            LitematicaMixinMod.LOGGER.info("[FASTBUILD] " + refusedThisRound
+                    + " command(s) refused this round - shrinking per command budget to " + maxBox);
         }
+        refusedThisRound = 0;
         beginDecompose();
     }
 
     private static void finish(Minecraft mc, String text) {
         stats.remaining = missing.size();
-        say(mc, text, false);
-        LitematicaMixinMod.LOGGER.info("[FASTBUILD] finished: " + text);
+        restoreCommandFeedback(mc);
+        say(mc, text + stats.skippedReport(), false);
+        LitematicaMixinMod.LOGGER.info("[FASTBUILD] finished: " + text + stats.skippedReport());
         stage = Stage.FINISHED;
         regions.clear();
         missing.clear();
@@ -857,6 +1022,7 @@ public final class FastBuildJob {
         chunkOrder.clear();
         fillQueue.clear();
         setQueue.clear();
+        stubborn.clear();
         boundLevel = null;
         stage = Stage.IDLE;
     }
